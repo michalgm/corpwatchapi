@@ -10,7 +10,7 @@ $db->do("alter table company_names auto_increment=0");
 $db->do("delete from company_locations");
 $db->do("alter table company_locations auto_increment=0");
 
-#&match_relationships_locations();
+&match_relationships_locations();
 
 $db->do("insert into companies (row_id, cik, company_name, irs_number, sic_category, source_type, source_id) select null, cik, match_name, max(irs_number), max(sic_code), 'filers', filer_id from filers group by cik");
 $db->do("update companies set cw_id = concat('cw_',row_id)");
