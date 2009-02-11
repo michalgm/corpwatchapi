@@ -33,6 +33,7 @@ if ($action eq 'index') {
 	foreach my $filing (@$filing) {
 		open(FILE, "$datadir/$filing->[3]/$filing->[2]/$filing->[0].sec21");
 		my $filename;
+		#scan through the Section 21 to locate the file name
 		while (<FILE>) { 
 			if ($_ =~ /^<FILENAME>(.+)/) {
 				$filename = $1;
