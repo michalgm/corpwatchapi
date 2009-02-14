@@ -12,8 +12,8 @@ $db->do("delete from company_names");
 $db->do("alter table company_names auto_increment=0");
 $db->do("delete from company_locations");
 $db->do("alter table company_locations auto_increment=0");
-
-
+$db->do("delete from company_relations");
+$db->do("alter table company_relations auto_increment=0");
 
 
 # ---- make company entries for each of the filers ----
@@ -24,9 +24,9 @@ $db->do("update companies set cw_id = concat('cw_',row_id)");
 #put the names of the filers in the names table
 #/* But put both varients in the names table.  If it has a former name, put that in the names table also.  Also strip off "%/___/" and put both varients in names. Include filing date and location if availible*/
 
-$db->do("insert into company_names (name_id, cw_id, name, date, country_code, subdiv_code, source, source_row_id) select null,cw_id, match_name, filing_date, null, null, 'filer_match_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik group by companies.cik"); 
+$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, match_name, filing_date, 'filer_match_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik group by companies.cik"); 
 
-$db->do("insert into company_names (name_id, cw_id, name, date, country_code, subdiv_code, source, source_row_id) select null,cw_id, conformed_name, filing_date, null, null, 'filer_conformed_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik group by companies.cik"); 
+$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, conformed_name, filing_date, 'filer_conformed_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik where conformed_name != match_name group by companies.cik"); 
 
 #insert former names of filers into the names table
 $db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, former_name,date(name_change_date), 'filer_former_name', filer_id from filers join companies using (cik) where former_name is not null");
@@ -56,11 +56,9 @@ $db->do("insert into companies (row_id, cik, company_name, source_type, source_i
 $db->do("update companies set cw_id = concat('cw_',row_id)");
 
 #put those names into the names table
-$db->do("insert into company_names (name_id, cw_id, name, source, source_row_id) select null,cw_id, clean_company, 'relationships_clean_company', relationship_id from relationships a join companies b on b.company_name = clean_company where b.source_type = 'relationships'");
-$db->do("insert into company_names (name_id, cw_id, name, source, source_row_id) select null,cw_id, a.company_name, 'relationships_company_name', relationship_id from relationships a join companies b on b.company_name = clean_company where b.source_type = 'relationships'");
+$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, clean_company, filing_date, 'relationships_clean_company', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships'");
+$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships' and a.company_name != clean_company");
 
-#process the relationships and attept to tag each one with a country and subdiv  for locationscode
-&match_relationships_locations();
 
 #put the relationships' locations that have been sucessfully tagged into the locations table
 $db->do("insert into company_locations (location_id,cw_id,date,type,raw_address,country_code,subdiv_code) select null,cw_id,filing_date,'relation_loc',location, country_code,subdiv_code from companies join relationships on source_type = 'relationships' and companies.row_id = relationships.relationship_id and location is not null
@@ -69,7 +67,7 @@ join filings using (filing_id)");
 
 # --- FIGURE OUT WHAT THE BEST (MOST COMPLETE) ADDRESS INFO IS
 #first choice is business address, but if that is null, using mailing, if that is null, use the location with both country and state, if that is null use whatever is left. 
-$db-do("update companies, 
+$db->do("update companies, 
 (select cw_id, 
 if (a is not null,a,
   if (b is not null, b, 
@@ -103,40 +101,7 @@ where companies.cw_id = relcount.cw_id");
 
 
 # ------ SUBROUTINE FOR MATCHING RELATIONSHIP LOCATIONS ---
-sub match_relationships_locations() {
-	#/* a) match all that have two capital letters, and are in the table of us state codes  */
 
-	$db->do('update relationships, un_country_subdivisions set relationships.subdiv_code = subdivision_code, relationships.country_code = "US" where location=subdivision_code and un_country_subdivisions.country_code = "US"');
-
-	#/* b) tag as DE all that contain the string "Delaware"  misses some multiply tagged locations  */
-
-	$db->do('update relationships set subdiv_code = "DE", country_code = "US" where location like "%Delaware%"');
-
-	#/*  c) match all state names (including "Georgia", which can be confused) */
-
-	$db->do('update relationships,un_country_subdivisions set relationships.country_code = un_country_subdivisions.country_code, relationships.subdiv_code = un_country_subdivisions.subdivision_code where relationships.location = subdivision_name and un_country_subdivisions.country_code = "US" and relationships.country_code is null');
-
-	#/* d) match all country names that are not confuseable (exclude georgia) */
-
-	$db->do('update relationships,un_countries set relationships.country_code = un_countries.country_code where relationships.location = country_name and country_name != "Georgia" and relationships.country_code is null');
-
-	#/* e) match alaised variants "caymen" "US", "USA", "U.S.A", "United States of America" tag caymen island varients */
-
-	$db->do('update relationships, un_country_aliases set relationships.country_code = un_country_aliases.country_code, relationships.subdiv_code = un_country_aliases.subdiv_code where location = country_name');
-
-	#/* f)  match where location in formate  "City Name, CA"  */
-
-	$db->do('update relationships, un_country_subdivisions set relationships.country_code = "US", relationships.subdiv_code = right(location,2) where location like "%, __" and right(location,2) in (select subdivision_code from un_country_subdivisions where country_code = "US")');
-
-	# /* f) match canadian proviences */
-
-	$db->do('update relationships, un_country_subdivisions set relationships.country_code = "CA", subdiv_code = un_country_subdivisions.subdivision_code where relationships.country_code is null and location = subdivision_name and location in (select subdivision_name from un_country_subdivisions where country_code = "CA")');
-
-	# /* g) tag entries that are definitly not geographies  $, %, incorporated in */
-
-	# /*  strip out "a % corporation" and retag countries and states? */
-
-}
 __END__;
 
 #everything below is not run, notes  and cruft included here for reference
