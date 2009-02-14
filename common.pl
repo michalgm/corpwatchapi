@@ -41,7 +41,7 @@ sub dbconnect {
 	my $dsn = "dbi:mysql:$db:localhost;mysql_compression=1";
 	my $dbh;
 	while (!$dbh) {
-		$dbh = DBI->connect($dsn, 'edgar', 'edgar');
+		$dbh = DBI->connect($dsn, 'edgar', 'edgar', {'mysql_enable_utf8'=>1});
 		unless ($dbh) {
 			print("Unable to Connect to database\n");
 			sleep(10);
