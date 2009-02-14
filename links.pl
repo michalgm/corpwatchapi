@@ -1,5 +1,5 @@
 #!/usr/bin/perl 
-chdir "/home/dameat/edgarapi/";
+chdir "/home/dameat/edgarapi/backend/";
 print "content-type: text/html\n\n";
 #print `pwd`;
 #exit;
@@ -15,11 +15,14 @@ print "<html>";
 
 if ($action eq 'index') {
 	$checked = param('onlycroc') eq 'on' ? 'checked': '';
+	$badchecked = param('bad') eq 'on' ? 'checked': '';
 	print "<div id='search' style='position: fixed; padding: 10px; right: 20px; top: 20px; background: #9999EE;'><form action='links.pl' method='get'>
 	<input type='checkbox' name='onlycroc' $checked>Only show Crocodyl Companies<br/>
+	<input type='checkbox' name='bad' $checked>Only show badly parsed<br/>
 	<input type='hidden' name='action' value='index'><input name='search'><input type='submit'></form></div>";
-	if ($checked) { 
-		$join = " join croc_companies b on b.cik = a.cik and type like '10-K%' "
+	if ($checked || $badchecked) { 
+		$join = " join croc_companies b on b.cik = a.cik and type like '10-K%' ";
+		if ($badchecked) { $where = " and parsed_badly = 1 "; }
 	}
 	if (param('search')) { 
 		$search = param('search');
