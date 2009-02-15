@@ -56,8 +56,8 @@ $db->do("insert into companies (row_id, cik, company_name, source_type, source_i
 $db->do("update companies set cw_id = concat('cw_',row_id)");
 
 #put those names into the names table
-$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, clean_company, filing_date, 'relationships_clean_company', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships'");
-$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships' and a.company_name != clean_company");
+$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships'");
+$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, clean_company, filing_date, 'relationships_clean_company', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships' and a.company_name != clean_company collate utf8_bin");
 
 
 #put the relationships' locations that have been sucessfully tagged into the locations table
@@ -77,8 +77,8 @@ if (a is not null,a,
 best_id from
 (select cw_id, max(biz_loc) a,max(mail_loc) b,max(rel_loc) c,max(s_rel_loc) d from (select cw_id,if ((type = 'business' and street_1 is not null),location_id,null) biz_loc, 
 if ((type = 'mailing' and street_1 is not null),location_id,null) mail_loc,
-if ((type = 'relation_l' and subdiv_code is not null),location_id,null) rel_loc,
-if ((type = 'relation_l'),location_id,null) s_rel_loc
+if ((type = 'relation_loc' and subdiv_code is not null),location_id,null) rel_loc,
+if ((type = 'relation_loc'),location_id,null) s_rel_loc
 from company_locations ) merged group by cw_id) best) best_loc
 set companies.best_location_id = best_loc.best_id
 where companies.cw_id = best_loc.cw_id");
