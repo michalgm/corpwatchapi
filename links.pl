@@ -16,13 +16,18 @@ print "<html>";
 if ($action eq 'index') {
 	$checked = param('onlycroc') eq 'on' ? 'checked': '';
 	$badchecked = param('bad') eq 'on' ? 'checked': '';
+	$emptychecked = param('empty') eq 'on' ? 'checked': '';
 	print "<div id='search' style='position: fixed; padding: 10px; right: 20px; top: 20px; background: #9999EE;'><form action='links.pl' method='get'>
 	<input type='checkbox' name='onlycroc' $checked>Only show Crocodyl Companies<br/>
-	<input type='checkbox' name='bad' $checked>Only show badly parsed<br/>
+	<input type='checkbox' name='bad' $badchecked>Only show badly parsed<br/>
+	<input type='checkbox' name='empty' $emptychecked>Only show filings w/o relationships<br/>
 	<input type='hidden' name='action' value='index'><input name='search'><input type='submit'></form></div>";
 	if ($checked || $badchecked) { 
 		$join = " join croc_companies b on b.cik = a.cik and type like '10-K%' ";
 		if ($badchecked) { $where = " and parsed_badly = 1 "; }
+	}
+	if ($emptychecked) {
+		$join .= " left join (select filing_id from relationships group by filing_id) r using (filing_id) ";
 	}
 	if (param('search')) { 
 		$search = param('search');
@@ -32,7 +37,10 @@ if ($action eq 'index') {
 			$where = " and company_name like '%$search%'";
 		}
 	}
-	$filing = $db->selectall_arrayref("select filing_id, filename, quarter, year, a.cik, company_name from filings a $join where has_sec21 = 1 $where order by company_name limit 1000") || die "$!";
+	if ($emptychecked) { $where .= "and r.filing_id is null"; }
+	$query = "select filing_id, filename, quarter, year, a.cik, a.company_name from filings a $join where has_sec21 = 1 $where order by company_name limit 1000";
+	print "$query<br>";
+	$filing = $db->selectall_arrayref("$query") || die "$!";
 	foreach my $filing (@$filing) {
 		open(FILE, "$datadir/$filing->[3]/$filing->[2]/$filing->[0].sec21");
 		my $filename;
@@ -55,7 +63,7 @@ if ($action eq 'index') {
 	print "<table border=1>";
 	if (! $relates->[0]) { print "no relationships found"; }
 	foreach $relate (@$relates) {
-		print "<tr><td>$relate->[1]</td><td>$relate->[2]</td></tr>\n";
+		print "<tr><td>$relate->[1]</td><td>$relate->[2]</td><td>$relate->[9]</td></tr>\n";
 	}
 	print "</table>";
 } else {
