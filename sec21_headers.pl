@@ -28,11 +28,6 @@ if ($ARGV[1]) { $debug = 1; }
 $db->do("delete from $relationship_table where filing_id is not null $where");
 $db->do("delete from filing_tables where filing_id is not null $where");
 my $filings = $db->selectall_arrayref("select filing_id, filename, quarter, year, cik, company_name from filings where has_sec21 = 1 $where order by filing_id") || die "$!";
-$sth = $db->prepare("insert into $relationship_table (relationship_id, company_name, location, filing_id, parse_method) values (null, ?, ?, ?, ?)");
-$sth2 = $db->prepare("update filings set has_html=?, num_tables=?,num_rows=?,tables_parsed=?,rows_parsed=? where filing_id=?");
-$sth3 = $db->prepare("insert into filing_tables set filing_table_id = null, filing_id=?, table_num=?, num_rows=?, num_cols=?, headers=?");
-$sth4 = $db->prepare("update filing_tables set parsed = 1 where filing_id=? and table_num=?");
-$sth5 = $db->prepare("select name from not_company_names where name = ?");
 unless ($filings->[0]) { die "No filings found!"; }
 
 foreach my $filing (@$filings) {
@@ -106,6 +101,7 @@ foreach my $filing (@$filings) {
 				if (defined $tableinfo->{company_col}) { $g_company_col = $tableinfo->{company_col}; } else { $tableinfo->{company_col} = $g_company_col; }
 				if (defined $tableinfo->{local_col}) { $g_local_col = $tableinfo->{local_col}; } else { $tableinfo->{local_col} = $g_local_col; }
 				#print "c: $tableinfo->{company_col} l: $tableinfo->{local_col}\n";
+				my $sth3 = $db->prepare_cached("insert into filing_tables set filing_table_id = null, filing_id=?, table_num=?, num_rows=?, num_cols=?, headers=?");
 				$sth3->execute($id, $results->{num_tables}, $#rows+1,  $#cols+1, $headers);
 				if (! defined $tableinfo->{company_col} || ! defined $tableinfo->{local_col} || $tableinfo->{company_col} == $tableinfo->{local_col}) { 
 					print " - bad headers - ";
@@ -174,6 +170,7 @@ foreach my $filing (@$filings) {
 				$results->{tables_parsed}++;
 				$results->{rows_parsed} += $tableinfo->{rows_parsed};
 				print " Parsed!\n"; 
+				my $sth4 = $db->prepare_cached("update filing_tables set parsed = 1 where filing_id=? and table_num=?");
 				$sth4->execute($id, $results->{num_tables});
 			} else {  
 				print " Failed!\n"; 
@@ -218,6 +215,7 @@ foreach my $filing (@$filings) {
 	} else {
 		print "Failed!\n"; 
 	}
+	my $sth2 = $db->prepare_cached("update filings set has_html=?, num_tables=?,num_rows=?,tables_parsed=?,rows_parsed=? where filing_id=?");
 	$sth2->execute($results->{has_html}, $results->{num_tables}, $results->{num_rows}, $results->{tables_parsed}, $results->{rows_parsed}, $id);
 	$p->tree->delete;
 }
@@ -358,8 +356,10 @@ sub store_relationship {
 	$company =~ s/^Exhibit [\d\.]+( Subsidiaries( of( the)? ((registrant|company) )?)?)?//ig;
 	
 	foreach my $data ($location, $company) { 
+		my $sth5 = $db->prepare_cached("select name from not_company_names where name = ?");
 		$sth5->execute($data);
-		if ($sth5->rows()) { return; }
+		if ($sth5->rows()) { $sth5->finish; return; }
+		$sth5->finish;
 		if ($data =~  /^\(?[\d\.]+\)?$/) { return; }
 		if ($data !~ /\w/) { return; }
 		if ($data =~ /^.$/) { return; }
@@ -374,6 +374,7 @@ sub store_relationship {
 sub store_results() {
 	my $result = shift;
 	#print Data::Dumper::Dumper($result);
+	my $sth = $db->prepare_cached("insert into $relationship_table (relationship_id, company_name, location, filing_id, parse_method) values (null, ?, ?, ?, ?)");
 	if ($sth->execute($result->{company},$result->{location}, $result->{id}, $result->{type})) { 
 		#print "after|$company|$location|\n";
 		return 1;
@@ -441,7 +442,7 @@ sub search_elements {
 		if ($tableinfo->{rows_parsed}) { last; }
 	}
 	#print $rows_parsed;
-	$elem->delete();
+	#$elem->delete();
 	return $tableinfo->{rows_parsed};
 }
 
