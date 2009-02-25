@@ -15,15 +15,15 @@ $db->do("update relationships set cik = null");
 $db->do("update cik_name_lookup set match_name = ''");
 
 #if we can identify that the "company name" is definitly a location (matches with location name) then swap "company name" and "location"
-print "\tTagging reverse country codes...\n";
-$db->do("update relationships a join un_countries b on company_name = country_name set company_name = location, location = country_name");
-print "\tTagging reverse country alias codes...\n";
-$db->do("update relationships a join un_country_aliases b on company_name = country_name set company_name = location, location = country_name");
-print "\tTagging reverse subdivision codes...\n";
-$db->do("update relationships a join un_country_subdivisions b on company_name = subdivision_name set company_name = location, location = subdivision_name");
+#print "\tTagging reverse country codes...\n";
+#$db->do("update relationships a join un_countries b on company_name = country_name set company_name = location, location = country_name");
+#print "\tTagging reverse country alias codes...\n";
+#$db->do("update relationships a join un_country_aliases b on company_name = country_name set company_name = location, location = country_name");
+#print "\tTagging reverse subdivision codes...\n";
+#$db->do("update relationships a join un_country_subdivisions b on company_name = subdivision_name set company_name = location, location = subdivision_name");
 
 #process the relationships and attept to tag each one with a country and subdiv  for locationscode
-&match_relationships_locations();
+#&match_relationships_locations();
 
 #set up prepared statments in the db to make things run faster
 my $sth = $db->prepare("update relationships set clean_company = ? where relationship_id = ?");
@@ -124,11 +124,15 @@ sub match_relationships_locations() {
 
 	print "\tTagging countries from city,country\n";
 	$db->do('update relationships a join un_country_aliases b on SUBSTRING_INDEX(location, ", ",-1) = country_name set a.country_code = b.country_code, a.subdiv_code = b.subdiv_code where  a.location like "%, %" and a.country_code is null');
+
+	print "\tTagging countries from city,state\n";
 	$db->do('update relationships a join un_country_subdivisions b on SUBSTRING_INDEX(location, ", ",1) = subdivision_name set a.country_code = b.country_code, a.subdiv_code = b.subdivision_code where  a.location like "%, %" and a.country_code is null');
-	$db->do('update relationships a join un_country_subdivisions b on SUBSTRING_INDEX(location, ", ",1) = subdivision_code set a.country_code = b.country_code, a.subdiv_code = b.subdivision_code where  a.location like "%, %" and a.country_code is null');
+
 	$db->do('update relationships a join un_countries b on SUBSTRING_INDEX(location, ", ",-1) = country_name set a.country_code = b.country_code where  a.location like "%, %" and a.country_code is null');
+
+	print "\tTagging countries from state,country\n";
 	$db->do('update relationships a join un_country_subdivisions b on SUBSTRING_INDEX(location, ", ",-1) = subdivision_name set a.country_code = b.country_code, a.subdiv_code = b.subdivision_code where  a.location like "%, %" and a.country_code is null');
-	$db->do('update relationships a join un_country_subdivisions b on SUBSTRING_INDEX(location, ", ",-1) = subdivision_code set a.country_code = b.country_code, a.subdiv_code = b.subdivision_code where  a.location like "%, %" and a.country_code is null');
+
 	# /* g) tag entries that are definitly not geographies  $, %, incorporated in */
 
 	# /*  strip out "a % corporation" and retag countries and states? */
