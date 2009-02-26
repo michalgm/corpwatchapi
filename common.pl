@@ -2,12 +2,15 @@
 
 use DBI;
 our $db = &dbconnect();
+use utf8;
+use Text::Unidecode;
 
 our $datadir = "./data/";
 
 	
 sub clean_for_match() {
 	my $name = shift;
+	$name = unidecode($name);  
 
 	#replace bad characters and character strings
 	$name =~ s/\s\s+/ /g;
