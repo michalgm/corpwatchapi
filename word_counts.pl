@@ -12,7 +12,10 @@ our $db;
 sub update_word_counts {
 	my $bigram = shift;
 	my %dict;
-	my $names = $db->selectall_arrayref('select name, source from company_names where source != "filer_conformed_name" group by name');
+	#get all the cleaned match names from various sources
+	my $names = $db->selectall_arrayref('select clean_company as compname from relationships
+union select match_name as compname from cik_name_lookup
+union select match_name as compname from filers group by compname');
 	my $table = $bigram ? 'bigram_freq' : 'word_freq';
 	foreach my $name (@$names) {
 		$name = $name->[0];
