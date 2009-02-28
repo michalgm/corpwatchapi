@@ -89,7 +89,7 @@ $db->do("insert into company_relations (relation_id, source_cw_id, target_cw_id,
 
 # update the companies table with the counts of parents and children
 $db->do("update companies, (select companies.cw_id,
- count(distinct parents.target_cw_id) num_parents ,count(distinct kids.target_cw_id) num_children 
+ count(distinct parents.source_cw_id) num_parents ,count(distinct kids.target_cw_id) num_children 
 from companies
 left join company_relations kids on companies.cw_id = kids.source_cw_id
 left join company_relations parents on companies.cw_id = parents.target_cw_id
