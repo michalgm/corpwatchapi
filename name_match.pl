@@ -4,17 +4,29 @@ require 'common.pl';
 #use Text::JaroWinkler qw( strcmp95 );
 use Data::Dumper;
 select(STDOUT); $| = 1; #unbuffer STDOUT
-$match_table = '_company_matches';
-$match_keep_level = 10;  # only put matches in db if bigger than this
-print "saving results with score above ".$match_keep_level." into table ".$match_table."\n";
 
-#$namequeries[2] = "select ucase(name), id from fortune1000 where name like '%ford%' order by name limit 10";
+$match_table = '_company_matches';  #where the output goes
+
+$match_source = 'relation_names';  #what we match against:  'cw_companies' 'cik_names'  'relation_names'
+
+$match_keep_level = 10;  # only put matches in db if bigger than this
+$efficient_matching = 0;  #only match in one direction based on id
+$match_locations = 1;  #include location informtion in the match scores
+
+print "Matching against ".$match_source." saving results with score above ".$match_keep_level." into table ".$match_table."\n";
+
+
 
 #get the sets of names we are gonna be comparing
-$namequeries[1] = "select ucase(name),id as cw_id from fortune1000";
+#$namequeries[1] = "select ucase(name),id as cw_id from fortune1000";   
+$namequeries[1] = "select ucase(clean_company),relationship_id as cw_id,country_code,subdiv_code from relationships limit 1";
 #$namequeries[2] = "select name,cw_id from company_names where source = 'filer_match_name' or source = 'relationships_clean_company' ";
 
 our $db;
+
+#debug
+
+my %stopterms = &get_stopterms();
 
 $db->do("DROP TABLE IF EXISTS `$match_table`");
 $db->do("CREATE TABLE `$match_table` ( `id` int(11) NOT NULL auto_increment, `name1` varchar(255) default NULL, `name2` varchar(255) default NULL, `score` decimal(5,2) default NULL, id_a varchar(25), id_b varchar(25),`match_type` varchar(10), `match` int(1) default 0, PRIMARY KEY  (`id`), KEY `id1` (`name1`), KEY `id2` (`name2`), KEY `score` (`score`))"); 
@@ -25,7 +37,16 @@ my $weights = $db->selectall_hashref("select word, weight from word_freq", 'word
 #load in the bigram frequency rates
 my $bi_weights = $db->selectall_hashref("select bigram, weight from bigram_freq", 'bigram');
 
-my $matches;
+if ($match_locations) {
+   print "loading country frequencies...\n";
+	#load in the country codes and scores
+	 $country_weights = $db->selectall_hashref("select country_code, 1/(log(count(*))+1) score from (select country_code, subdiv_code from company_locations group by cw_id,country_code) locs  group by country_code ","country_code");
+	
+	#subdive counts (and scores) are conditional on country scores: "US:DE"
+	 $subdiv_weights = $db->selectall_hashref("select concat(country_code,':', subdiv_code) code, 1/(log(count(*))+1) score from (select country_code, subdiv_code from company_locations group by cw_id,country_code) locs  where subdiv_code is not null group by country_code,subdiv_code","code");
+
+}
+
 my $clean;
 foreach ('1', '2') {
 	my $set = $_;
@@ -33,8 +54,7 @@ foreach ('1', '2') {
 	#$query = "select ucase(name) from person_names where (sourcetable= 'facultylist' or sourcetable='courtesyapps') group by ucase(name) order by name"; 
 	#$query = "select ucase(name) from person_names group by ucase(name) order by name"; 
 	my $sth = $db->prepare($namequeries[$set]) || print "$DBI->errstr\n";
-	$sth->execute() || print "$DBI->errstr\n";
-	print $db->errstr;
+	$sth->execute() || print "$DBI->errstr\n".$db->errstr;
 
 	while (my $row = $sth->fetchrow_arrayref) { 
 	  #thse regexs clean out puncuation for matching
@@ -45,7 +65,7 @@ foreach ('1', '2') {
 		#unless ($first && $last) { print "wtf! $row->[0] - $row->[1]\n"; exit;}
 	   #but instead we use the common cleaning fuction
 	    $row->[0] = &clean_for_match($row->[0]);
-		$names = {name=>$row->[0], cw_id=>$row->[1]};
+		$names = {name=>$row->[0], cw_id=>$row->[1], country_code=>$row->[2], subdiv_code=>$row->[3]};
 		push(@{$clean->[$set]}, $names);
 	}
 }
@@ -62,50 +82,46 @@ print "$count/$listsize\n";
 my $matches;
 my $percent = int($#{$clean->[1]}/100);
 
-
+#---------------------NAME MATCHING LOOP------------------
 #loop over the names, computing match score for each. 
 foreach my $names (@{$clean->[1]}) {
     #tracker to print out percent done
-	if ($y == $percent) { 
-		print "\r".int($count/$listsize*100) ."% (";
-		my $ntime = time() - $time;
-		print "$ntime)";  
-		$y = 0; 
-		$time = time();
-	}
-	$y++;
+#	if ($y == $percent) { 
+#		print "\r".int($count/$listsize*100) ."% (";
+#		my $ntime = time() - $time;
+#		print "$ntime)";  
+#		$y = 0; 
+#		$time = time();
+#	}
+#	$y++;
 	
 	#get the name off the list
 	my $name1 = ${$names}{name};
 	#set up a query to get the a corresponding subset of names to match against
 	#print "getting matchlist for ".$name1."  (id: ".${$names}{cw_id}.")";
 	my @match_subset;
-	my $query = &name_subset_query($name1,"cw_companies");
+	my $query = &name_subset_query($name1,$match_source);
 	#print ($query."\n");
     my $sth3 = $db->prepare($query) || print "$DBI->errstr\n";
-	$sth3->execute() || print "$DBI->errstr\n";
-	print $db->errstr;
+	$sth3->execute() || print "$DBI->errstr\n".$db->errstr;
 	#load the query results into array (assuming they already cleaned) 
 	while (my $row = $sth3->fetchrow_arrayref) { 
-	  	$record = {name=>$row->[0], cw_id=>$row->[1]};
+	  	$record = {name=>$row->[0], cw_id=>$row->[1],country_code=>$row->[2],subdiv_code=>$row->[3]};
 		push(@match_subset, $record);
 	}
 	#print " comparing to ".scalar(@match_subset)." names.\n";
-	
-	#TODO: FIRST CHECK FOR 100% MATCH, THEN POSSIBLE TO IGNORE LOWER MATCHES? 
-	
-	#TODO: could speed this up a lot by caching the tokens and scores from $name1 so that we don't recalculate for each submatch?. 
+	 
 	foreach my $names2 (@match_subset) {
 		#if (${$names}{primary_id} == ${$names2}{primary_id}) { next; }
 		my $name2 = ${$names2}{name};
 		#$matches->{$name1}->{$name2}->{'count'}++;
-		#print "\t$name1 v $name2: $matches->{$name1}->{$name2}";
-		#print "\r\t$name1 v $name2: $matches->{$name1}->{$name2}    ";
+
+		print "$name1 (".${$names}{cw_id}." ".${$names}{country_code}.":".${$names}{subdiv_code}.")\t$name2 (".${$names2}{cw_id}." ".${$names2}{country_code}.":".${$names2}{subdiv_code}.")\n";
 		
 		
 		#----- bigram matching
 		#if matching efficiently, only match pair in one direction
-		unless ($efficient_matching && ${$names}{cw_id} gt ${$names2}{cw_id}) {
+		unless ($efficient_matching && ${$names}{cw_id} > ${$names2}{cw_id}) {
 			my $match = 0;
 			if ($name1 eq $name2) { 
 				$match = 100;  
@@ -119,12 +135,12 @@ foreach my $names (@{$clean->[1]}) {
 			if ($match > $match_keep_level) { 
 				$sth2->execute($name1, $name2, $match, ${$names}{cw_id}, ${$names2}{cw_id},"bigram"); 
 			}
-			#print "$match";
+			print "\tbigram:$match";
 		} #else { print "dupe\n"; }
 		
 		# term frequency matching
 		#if matching efficiently, only match pair in one direction
-		unless ($efficient_matching && ${$names}{cw_id} gt ${$names2}{cw_id}) {
+		unless ($efficient_matching && ${$names}{cw_id} > ${$names2}{cw_id}) {
 			my $match = 0;
 			if ($name1 eq $name2) { 
 				$match = 100;  
@@ -136,8 +152,16 @@ foreach my $names (@{$clean->[1]}) {
 			#print "\t".$name2." (term_freq): ".$match."\n";
 			#if the match is above a threshold, insert in db
 			if ($match > $match_keep_level) { $sth2->execute($name1, $name2, $match, ${$names}{cw_id}, ${$names2}{cw_id},"term_freq"); }
-			#print "$match";
+			print " term_freq:$match";
 		} #else { print "dupe\n"; }
+		
+		#location matching
+		unless ($efficient_matching && ${$names}{cw_id} > ${$names2}{cw_id}) {
+			
+			my $loc_score = &match_locations(${$names}{country_code},${$names}{subdiv_code}, ${$names2}{country_code},${$names2}{subdiv_code});
+			
+			print " loc_match:$loc_score \n";
+		}
 	}
 	$count++;
 	#print total_size($clean)."\t".total_size($matches)."\t".total_size($sth)."\n";
@@ -198,7 +222,7 @@ sub list_bigrams() {
    my @words = split(/[\s\/]+/, $name); 
 	my $numtokens = @words;
 	foreach my $i(0 .. $numtokens-2) {
-	    my $bigram = @words[$i] ." ". @words[$i+1];
+	    my $bigram = $words[$i] ." ". $words[$i+1];
 	    #need a more standard function for stripping punctuation
 		$bigram =~ s/[\.,]//g;  
 		push(@gram_list, lc($bigram));
@@ -216,11 +240,11 @@ sub get_bigram_score() {
 	my @tokens1 = &list_bigrams($comp1);
 	my @tokens2 = &list_bigrams($comp2);
 	
-	#//score=     2*(sum score tokens in comp) / (sum score comp1)+(sum score comp2);
+	#Score is compute by comparing the weights of the matching tokens to the weights of each name's tokens:
+	#score=   2*(sum score tokens in comp) / (sum score comp1)+(sum score comp2);
 	my $sum1 =0;
 	my $sum2 =0;
 	my $sumBoth = 0;
-	my $score = 0;
 	foreach my $token (@tokens1){
 	   #if it has a weight, it is at least somewhat common
 	    if (defined $bi_weights->{$token}){
@@ -260,33 +284,92 @@ sub get_bigram_score() {
 #create a query that will return a subset of names that match at least one term each.  This costs some mysql query time, but makes it so we are only matching aginst 100 or a few thousand names instead of tens of thousands. 
 
 sub name_subset_query() {
-  my $comp1 = @_[0];  #the company name that will be matched. 
-  my $match_set = @_[1];  #this determines what nameset we should match against
+  my $comp1 = $_[0];  #the company name that will be matched. 
+  my $match_set = $_[1];  #this determines what nameset we should match against
   #need to escape quotes in company name for db
   $comp1 = &clean_for_match($comp1);
  # $comp1 =~ s/'/\'/;
  #$comp1 =~ s/"/\"/;
-  my @tokens1 = split(/ /,lc($comp1)); #break name into tokens on space
   my $query = "";
+  my @tokens1;
+  
+  #split the name on into tokens on space, kick out tokens that match the stopword list
+  foreach my $token (split(/ /,lc($comp1))) {
+   	if (!exists $stopterms{$token}) {
+   		push(@tokens1,$token);
+   	}
+  }
     
-  #if we are matching against all names 
-  if ($match_set eq "cik_and_relations") {
+  #if we are matching against all EDGAR names in cik lookup table
+  if ($match_set eq "cik_names") {
 	  $first = pop(@tokens1);
-	   $query = "select ucase(clean_company), '?' as cw_id from relationships where clean_company like '%".$first."%' union distinct select ucase(match_name),cik as cw_id from cik_name_lookup where match_name like '%".$first."%'";
+	   $query = "select ucase(match_name),cik as cw_id,null,null from cik_name_lookup where match_name like '%".$first."%'";
 	  foreach my $token (@tokens1){
-		 $query = $query." union distinct 
-		 select ucase(clean_company),'?' as cw_id from relationships where clean_company like '%".$token."%' union distinct select ucase(match_name),cik as cw_id from cik_name_lookup where match_name like '%".$token."%'";
+	   	$query = $query." union distinct select ucase(match_name),cik as cw_id ,null,null from cik_name_lookup where match_name like '%".$token."%'";
 	  }
-   }
+   } 
+   
+   #use these queries if we are matching against names of companies in relationships table
+     elsif ($match_set eq "relation_names") {
+   		$first = pop(@tokens1);
+	   $query = "select ucase(clean_company), relationship_id as cw_id, country_code,subdiv_code from relationships where clean_company like '%".$first."%' ";
+	  foreach my $token (@tokens1){
+		 $query = $query."union distinct select ucase(clean_company), relationship_id as cw_id,country_code,subdiv_code from relationships where clean_company like '%".$token."%' ";
+      }
+    } 
+    
    #use these quries if we are only matching aginst company_names table	  
    elsif ($match_set eq "cw_companies") {
    		$first = pop(@tokens1);
-	   $query = "select ucase(name), cw_id from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$first."%' ";
+	   $query = "select ucase(name), cw_id,null,null from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$first."%' ";
 	  foreach my $token (@tokens1){
-		 $query = $query."union distinct select ucase(name), cw_id from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$token."%' ";
+	    $query = $query."union distinct select ucase(name), cw_id,null,null from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$token."%' ";
       }
     } else {
        #uh oh, what should default be?
     }
   return $query;
+}
+
+#returns a hash with the list of some of the most common terms to avoid using in queires
+sub get_stopterms() {
+
+   my %stopterms = ();
+   my $stopquery = "select word from word_freq order by count desc limit 75";
+   my $sth4 = $db->prepare($stopquery) || print "$DBI->errstr\n";
+   $sth4->execute() || print "$DBI->errstr\n".$db->errstr;
+	#load the query results into the hash 
+	while (my $row = $sth4->fetchrow_arrayref) { 
+	  	$stopterms{$row->[0]} = $row->[0];
+	} 
+   return %stopterms;
+}
+
+#scores match country_code and subdiv_code of passed arguments
+sub match_locations() {
+   my ($country1, $subdiv1,$country2,$subdiv2) = @_;
+   $subdiv1 = $country1.":".$subdiv1;
+   $subdiv2 = $country2.":".$subdiv2;
+   my $score = 0.25;
+   #if either side is null, don't match
+   if ((defined $country1) & (defined $country2 )){
+	   if ($country1 eq $country2){
+		$score = $country_weights->{$country1}->{score};
+		#now check if the subdivision also matches
+		if ((defined $subdiv1) & (defined $subdiv2)){
+			if ($subdiv1 eq $subdiv2) {
+				$score = $score+ $subdiv_weights->{$subdiv1}->{score};
+			} else {
+			  #mismatch, so punish
+			  $score=0;
+			}
+		}
+	   } else {
+	     #countries do *not* match, so punish
+	     $score=0;
+	   }
+   }
+   
+   return $score * 100;
+   
 }

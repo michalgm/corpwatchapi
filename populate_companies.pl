@@ -51,7 +51,7 @@ where companies.cw_id = sic.cw_id");
 
 
 #create companies for relationship companies that have not already been assigned a cik
-#TODO: skip 'companies' that match with strings in the non-companies table
+#TODO: skip 'companies' that match with strings in the non-companies table or match with locations -- unless this is being done now in pre preprocessing
 $db->do("insert into companies (row_id, cik, company_name, source_type, source_id) select null, cik, clean_company, 'relationships', relationship_id from relationships left join companies using (cik) where companies.cik is null group by clean_company");
 $db->do("update companies set cw_id = concat('cw_',row_id)");
 
