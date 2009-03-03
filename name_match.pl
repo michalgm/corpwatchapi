@@ -9,7 +9,7 @@ $match_table = '_company_matches';  #where the output goes
 
 $match_source = 'relation_names';  #what we match against:  'cw_companies' 'cik_names'  'relation_names'
 
-$match_keep_level = 10;  # only put matches in db if bigger than this
+$match_keep_level = 25;  # only put matches in db if bigger than this
 $efficient_matching = 0;  #only match in one direction based on id
 $match_locations = 1;  #include location informtion in the match scores
 
@@ -57,13 +57,8 @@ foreach ('1', '2') {
 	$sth->execute() || print "$DBI->errstr\n".$db->errstr;
 
 	while (my $row = $sth->fetchrow_arrayref) { 
-	  #thse regexs clean out puncuation for matching
-		#$row->[0] =~ s/-/ /;
-		#$row->[0] =~ /^([^,]+), ([^"]+)/;
-		#my $first = $2;
-		#my $last = $1;
-		#unless ($first && $last) { print "wtf! $row->[0] - $row->[1]\n"; exit;}
-	   #but instead we use the common cleaning fuction
+	  #clean out puncuation for matching
+
 	    $row->[0] = &clean_for_match($row->[0]);
 		$names = {name=>$row->[0], cw_id=>$row->[1], country_code=>$row->[2], subdiv_code=>$row->[3]};
 		push(@{$clean->[$set]}, $names);
@@ -117,7 +112,12 @@ foreach my $names (@{$clean->[1]}) {
 		#$matches->{$name1}->{$name2}->{'count'}++;
 
 		print "$name1 (".${$names}{cw_id}." ".${$names}{country_code}.":".${$names}{subdiv_code}.")\t$name2 (".${$names2}{cw_id}." ".${$names2}{country_code}.":".${$names2}{subdiv_code}.")\n";
-		
+		 
+		#------ location matching (if we are doing it
+		my $loc_score = 0;
+		if ($match_locations){
+		    $loc_score =  &match_locations(${$names}{country_code}, ${$names}{subdiv_code}, ${$names2}{country_code},${$names2}{subdiv_code});
+		}
 		
 		#----- bigram matching
 		#if matching efficiently, only match pair in one direction
@@ -130,15 +130,17 @@ foreach my $names (@{$clean->[1]}) {
 				$match *=100;
 				unless ($match) { $match = 0; }
 			}
+			
+			$match += $loc_score; #add in the location score
 			#print "\t".$name2." (bigram): ".$match."\n";
 			#if the match is above a threshold, insert in db
 			if ($match > $match_keep_level) { 
-				$sth2->execute($name1, $name2, $match, ${$names}{cw_id}, ${$names2}{cw_id},"bigram"); 
+				$sth2->execute($name1, $name2, $match, ${$names}{cw_id}, ${$names2}{cw_id},"bigram_".$match_locations); 
 			}
-			print "\tbigram:$match";
+			#print "\tbigram:$match";
 		} #else { print "dupe\n"; }
 		
-		# term frequency matching
+		# ----------- term frequency matching
 		#if matching efficiently, only match pair in one direction
 		unless ($efficient_matching && ${$names}{cw_id} > ${$names2}{cw_id}) {
 			my $match = 0;
@@ -149,19 +151,14 @@ foreach my $names (@{$clean->[1]}) {
 				$match *=100;
 				unless ($match) { $match = 0; }
 			}
+			
+		    $match += $loc_score; #add in the location score
 			#print "\t".$name2." (term_freq): ".$match."\n";
 			#if the match is above a threshold, insert in db
-			if ($match > $match_keep_level) { $sth2->execute($name1, $name2, $match, ${$names}{cw_id}, ${$names2}{cw_id},"term_freq"); }
-			print " term_freq:$match";
+			if ($match > $match_keep_level) { $sth2->execute($name1, $name2, $match, ${$names}{cw_id}, ${$names2}{cw_id},"term_freq_".$match_locations); }
+			#print " term_freq:$match";
 		} #else { print "dupe\n"; }
 		
-		#location matching
-		unless ($efficient_matching && ${$names}{cw_id} > ${$names2}{cw_id}) {
-			
-			my $loc_score = &match_locations(${$names}{country_code},${$names}{subdiv_code}, ${$names2}{country_code},${$names2}{subdiv_code});
-			
-			print " loc_match:$loc_score \n";
-		}
 	}
 	$count++;
 	#print total_size($clean)."\t".total_size($matches)."\t".total_size($sth)."\n";
@@ -215,20 +212,7 @@ sub get_term_score() {
 	return $score;
 }
 
-#break a name up into a series of bigrams
-sub list_bigrams() {
-   my @gram_list;
-   my $name = $_[0];
-   my @words = split(/[\s\/]+/, $name); 
-	my $numtokens = @words;
-	foreach my $i(0 .. $numtokens-2) {
-	    my $bigram = $words[$i] ." ". $words[$i+1];
-	    #need a more standard function for stripping punctuation
-		$bigram =~ s/[\.,]//g;  
-		push(@gram_list, lc($bigram));
-	}
-	return @gram_list;
-}
+
 
 #compute a match score based on the frequency of bigram occurances observed in our set of names
 sub get_bigram_score() {

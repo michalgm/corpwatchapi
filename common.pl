@@ -38,6 +38,21 @@ sub clean_for_match() {
 	return $name;
 }
 
+#break a name up into a series of bigrams
+sub list_bigrams() {
+   my @gram_list;
+   my $name = $_[0];
+   my @words = split(/[\s\/]+/, $name); 
+	my $numtokens = @words;
+	foreach my $i(0 .. $numtokens-2) {
+	    my $bigram = $words[$i] ." ". $words[$i+1];
+	    #need a more standard function for stripping punctuation
+		$bigram =~ s/[\.,]//g;  
+		push(@gram_list, lc($bigram));
+	}
+	return @gram_list;
+}
+
 sub dbconnect {
 	my $db = shift;
 	unless($db) { $db = 'edgarapi';}
