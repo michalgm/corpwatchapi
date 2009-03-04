@@ -100,7 +100,7 @@ foreach my $names (@{$clean->[1]}) {
     #my $sth3 = $db->prepare($query) || print "$DBI->errstr\n";
 	#$sth3->execute() || print "$DBI->errstr\n".$db->errstr;
 	#load the query results into array (assuming they already cleaned) 
-	while (my $row = selectrow_arrayref($query)) { 
+	while (my $row = $db->selectrow_arrayref($query)) { 
 	  	$record = {name=>$row->[0], id=>$row->[1],country_code=>$row->[2],subdiv_code=>$row->[3]};
 		push(@match_subset, $record);
 	}
