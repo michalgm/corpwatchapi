@@ -19,13 +19,15 @@ union select match_name as compname from filers group by compname');
 	my $table = $bigram ? 'bigram_freq' : 'word_freq';
 	foreach my $name (@$names) {
 		$name = $name->[0];
-		my @words = split(/[\s\/]+/, $name); #TODO: add split on "-" (replace with " ") and/or use consistant bigram function 
+		#TODO: add split on "-" (replace with " ") 
+		#TODO: USE list_bigram function
+		$name = &clean_for_match($name);
+		my @words = split(/[\s\/]+/, $name);  
 		my $numtokens = $#words;
 		if ($bigram) { $numtokens -=2; }
 		foreach my $i(0 .. $numtokens) {
 			my $word = $words[$i];
 			if ($bigram) { $word .= " ". $words[$i+1]; }
-			$word = clean_for_match($word);
 			#$word =~ s/[\.,]//g;
 			$dict{lc($word)}++;
 		}	

@@ -7,20 +7,20 @@ select(STDOUT); $| = 1; #unbuffer STDOUT
 
 $match_table = '_company_matches';  #where the output goes
 
-$match_source = 'relation_names';  #what we match against:  'cw_companies' 'cik_names'  'relation_names'
+$match_source = 'filer_names';  #what we match against:  'cw_companies' 'cik_names'  'relation_names' 'filer_names'
 
-$match_keep_level = 25;  # only put matches in db if bigger than this
+$match_keep_level = 70;  # only put matches in db if bigger than this
 $efficient_matching = 0;  #only match in one direction based on id
-$match_locations = 1;  #include location informtion in the match scores
+$match_locations = 0;  #include location informtion in the match scores
 
 print "Matching against ".$match_source." saving results with score above ".$match_keep_level." into table ".$match_table."\n";
 
 
 
 #get the sets of names we are gonna be comparing
-#$namequeries[1] = "select ucase(name),id as cw_id from fortune1000";   
-$namequeries[1] = "select ucase(clean_company),relationship_id as cw_id,country_code,subdiv_code from relationships limit 1";
-#$namequeries[2] = "select name,cw_id from company_names where source = 'filer_match_name' or source = 'relationships_clean_company' ";
+#$namequeries[1] = "select ucase(name),id  from fortune1000";   
+$namequeries[1] = "select ucase(clean_company),relationship_id as id,null,null from relationships";
+#$namequeries[2] = "select name,cw_id as id from company_names where source = 'filer_match_name' or source = 'relationships_clean_company' ";
 
 our $db;
 
@@ -60,7 +60,7 @@ foreach ('1', '2') {
 	  #clean out puncuation for matching
 
 	    $row->[0] = &clean_for_match($row->[0]);
-		$names = {name=>$row->[0], cw_id=>$row->[1], country_code=>$row->[2], subdiv_code=>$row->[3]};
+		$names = {name=>$row->[0], id=>$row->[1], country_code=>$row->[2], subdiv_code=>$row->[3]};
 		push(@{$clean->[$set]}, $names);
 	}
 }
@@ -81,29 +81,30 @@ my $percent = int($#{$clean->[1]}/100);
 #loop over the names, computing match score for each. 
 foreach my $names (@{$clean->[1]}) {
     #tracker to print out percent done
-#	if ($y == $percent) { 
-#		print "\r".int($count/$listsize*100) ."% (";
-#		my $ntime = time() - $time;
-#		print "$ntime)";  
-#		$y = 0; 
-#		$time = time();
-#	}
-#	$y++;
+	if ($y == $percent) { 
+		print "\r".int($count/$listsize*100) ."% (";
+		my $ntime = time() - $time;
+		print "$ntime)";  
+		$y = 0; 
+		$time = time();
+	}
+	$y++;
 	
 	#get the name off the list
 	my $name1 = ${$names}{name};
 	#set up a query to get the a corresponding subset of names to match against
-	#print "getting matchlist for ".$name1."  (id: ".${$names}{cw_id}.")";
+	#print "getting matchlist for ".$name1."  (id: ".${$names}{id}.")";
 	my @match_subset;
 	my $query = &name_subset_query($name1,$match_source);
 	#print ($query."\n");
-    my $sth3 = $db->prepare($query) || print "$DBI->errstr\n";
-	$sth3->execute() || print "$DBI->errstr\n".$db->errstr;
+    #my $sth3 = $db->prepare($query) || print "$DBI->errstr\n";
+	#$sth3->execute() || print "$DBI->errstr\n".$db->errstr;
 	#load the query results into array (assuming they already cleaned) 
-	while (my $row = $sth3->fetchrow_arrayref) { 
-	  	$record = {name=>$row->[0], cw_id=>$row->[1],country_code=>$row->[2],subdiv_code=>$row->[3]};
+	while (my $row = select_row_arrayref($query)) { 
+	  	$record = {name=>$row->[0], id=>$row->[1],country_code=>$row->[2],subdiv_code=>$row->[3]};
 		push(@match_subset, $record);
 	}
+	if ($db->errstr){print $db->errstr."\n";}
 	#print " comparing to ".scalar(@match_subset)." names.\n";
 	 
 	foreach my $names2 (@match_subset) {
@@ -111,17 +112,17 @@ foreach my $names (@{$clean->[1]}) {
 		my $name2 = ${$names2}{name};
 		#$matches->{$name1}->{$name2}->{'count'}++;
 
-		print "$name1 (".${$names}{cw_id}." ".${$names}{country_code}.":".${$names}{subdiv_code}.")\t$name2 (".${$names2}{cw_id}." ".${$names2}{country_code}.":".${$names2}{subdiv_code}.")\n";
+		#print "$name1 (".${$names}{id}." ".${$names}{country_code}.":".${$names}{subdiv_code}.")\t$name2 (".${$names2}{id}." ".${$names2}{country_code}.":".${$names2}{subdiv_code}.")\n";
 		 
 		#------ location matching (if we are doing it
 		my $loc_score = 0;
 		if ($match_locations){
-		    $loc_score =  &match_locations(${$names}{country_code}, ${$names}{subdiv_code}, ${$names2}{country_code},${$names2}{subdiv_code});
+		    $loc_score =  &location_match_score(${$names}{country_code}, ${$names}{subdiv_code}, ${$names2}{country_code},${$names2}{subdiv_code});
 		}
 		
 		#----- bigram matching
 		#if matching efficiently, only match pair in one direction
-		unless ($efficient_matching && ${$names}{cw_id} > ${$names2}{cw_id}) {
+		unless ($efficient_matching && ${$names}{id} > ${$names2}{id}) {
 			my $match = 0;
 			if ($name1 eq $name2) { 
 				$match = 100;  
@@ -135,14 +136,14 @@ foreach my $names (@{$clean->[1]}) {
 			#print "\t".$name2." (bigram): ".$match."\n";
 			#if the match is above a threshold, insert in db
 			if ($match > $match_keep_level) { 
-				$sth2->execute($name1, $name2, $match, ${$names}{cw_id}, ${$names2}{cw_id},"bigram_".$match_locations); 
+				$sth2->execute($name1, $name2, $match, ${$names}{id}, ${$names2}{id},"bigram_".$match_locations); 
 			}
 			#print "\tbigram:$match";
 		} #else { print "dupe\n"; }
 		
 		# ----------- term frequency matching
 		#if matching efficiently, only match pair in one direction
-		unless ($efficient_matching && ${$names}{cw_id} > ${$names2}{cw_id}) {
+		unless ($efficient_matching && ${$names}{id} > ${$names2}{id}) {
 			my $match = 0;
 			if ($name1 eq $name2) { 
 				$match = 100;  
@@ -155,7 +156,7 @@ foreach my $names (@{$clean->[1]}) {
 		    $match += $loc_score; #add in the location score
 			#print "\t".$name2." (term_freq): ".$match."\n";
 			#if the match is above a threshold, insert in db
-			if ($match > $match_keep_level) { $sth2->execute($name1, $name2, $match, ${$names}{cw_id}, ${$names2}{cw_id},"term_freq_".$match_locations); }
+			if ($match > $match_keep_level) { $sth2->execute($name1, $name2, $match, ${$names}{id}, ${$names2}{id},"term_".$match_locations); }
 			#print " term_freq:$match";
 		} #else { print "dupe\n"; }
 		
@@ -165,6 +166,7 @@ foreach my $names (@{$clean->[1]}) {
 }	
 
 #$db->do("insert into $match_table select null, name2, name1, score from $match_table");
+print "\nDone.\n";
 exit;
 
 #compute a match score based on the intersecting set of terms, weighted by their observed frequency in our set of names
@@ -287,29 +289,39 @@ sub name_subset_query() {
   #if we are matching against all EDGAR names in cik lookup table
   if ($match_set eq "cik_names") {
 	  $first = pop(@tokens1);
-	   $query = "select ucase(match_name),cik as cw_id,null,null from cik_name_lookup where match_name like '%".$first."%'";
+	   $query = "select ucase(match_name),cik as id,null,null from cik_name_lookup where match_name like '%".$first."%'";
 	  foreach my $token (@tokens1){
-	   	$query = $query." union distinct select ucase(match_name),cik as cw_id ,null,null from cik_name_lookup where match_name like '%".$token."%'";
+	   	$query = $query." union distinct select ucase(match_name),cik as id ,null,null from cik_name_lookup where match_name like '%".$token."%'";
 	  }
    } 
    
    #use these queries if we are matching against names of companies in relationships table
      elsif ($match_set eq "relation_names") {
    		$first = pop(@tokens1);
-	   $query = "select ucase(clean_company), relationship_id as cw_id, country_code,subdiv_code from relationships where clean_company like '%".$first."%' ";
+	   $query = "select ucase(clean_company), relationship_id as id, country_code,subdiv_code from relationships where clean_company like '%".$first."%' ";
 	  foreach my $token (@tokens1){
-		 $query = $query."union distinct select ucase(clean_company), relationship_id as cw_id,country_code,subdiv_code from relationships where clean_company like '%".$token."%' ";
+		 $query = $query."union distinct select ucase(clean_company), relationship_id as id,country_code,subdiv_code from relationships where clean_company like '%".$token."%' ";
       }
     } 
     
    #use these quries if we are only matching aginst company_names table	  
    elsif ($match_set eq "cw_companies") {
    		$first = pop(@tokens1);
-	   $query = "select ucase(name), cw_id,null,null from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$first."%' ";
+	   $query = "select ucase(name), cw_id as id,null,null from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$first."%' ";
 	  foreach my $token (@tokens1){
-	    $query = $query."union distinct select ucase(name), cw_id,null,null from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$token."%' ";
+	    $query = $query."union distinct select ucase(name), cw_id as id,null,null from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$token."%' ";
       }
-    } else {
+    } 
+    
+    #use these queries if we are matching against filer names
+    #TODO: add location info
+    elsif ($match_set eq "filer_names") {
+   		$first = pop(@tokens1);
+	   $query = "select ucase(match_name), cik as id,null,null from filers where match_name like '%".$first."%' ";
+	  foreach my $token (@tokens1){
+	    $query = $query."union distinct select ucase(match_name), cik as id, null,null from filers where match_name like '%".$token."%' ";
+      }
+    }else {
        #uh oh, what should default be?
     }
   return $query;
@@ -330,7 +342,7 @@ sub get_stopterms() {
 }
 
 #scores match country_code and subdiv_code of passed arguments
-sub match_locations() {
+sub location_match_score() {
    my ($country1, $subdiv1,$country2,$subdiv2) = @_;
    $subdiv1 = $country1.":".$subdiv1;
    $subdiv2 = $country2.":".$subdiv2;

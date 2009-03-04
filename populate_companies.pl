@@ -5,6 +5,8 @@ require "common.pl";
 
 #The purpose of this is to repopulate the companies_* tables using the information that has been parsed from the filings. 
 
+#TODO: figure out system to magically preserve ids for companies across db updates
+
 #reset the tables so that the ids restart from zero
 $db->do("delete from companies");
 $db->do("alter table companies auto_increment=0");
@@ -21,15 +23,18 @@ $db->do("alter table company_relations auto_increment=0");
 $db->do("insert into companies (row_id, cik, company_name, irs_number, sic_category, source_type, source_id) select null, cik, match_name, max(irs_number), max(sic_code), 'filers', filer_id from filers group by cik");
 $db->do("update companies set cw_id = concat('cw_',row_id)");
 
-#put the names of the filers in the names table
-#/* But put both varients in the names table.  If it has a former name, put that in the names table also.  Also strip off "%/___/" and put both varients in names. Include filing date and location if availible*/
+#put the match names of the filers in the names table
 
 $db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, match_name, filing_date, 'filer_match_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik group by companies.cik"); 
 
+#put in  the edgar "conformed" name if it is differnt from the match_name
 $db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, conformed_name, filing_date, 'filer_conformed_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik where conformed_name != match_name group by companies.cik"); 
 
-#insert former names of filers into the names table
+#insert former names of filers into the names table (if there are any)
 $db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, former_name,date(name_change_date), 'filer_former_name', filer_id from filers join companies using (cik) where former_name is not null");
+
+#if we are using the html forms as the source, we won't have former names of filers.  So instead, get them from the cik_name_lookup.  Only problem is that we don't have the name change date :-(
+$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id,cik_name_lookup.match_name,null as date,'cik_former_name',cik_name_lookup.row_id from company_names join companies using (cw_id) join cik_name_lookup using (cik) where source = 'filer_match_name' and name != cik_name_lookup.match_name group by cw_id,match_name");
 
 #now process the locations of the filers
 #/* put the biz address, mail address, and name state suffix in locations with id*/
@@ -48,6 +53,17 @@ where companies.cw_id = sic.cw_id");
 
 
 #----- create companies for the relationship companies -------
+#try to assign CIKs to relationship companies
+#WARNING: SOME NAMES HAVE MULTIPLE CIKs, and some CIKs have multiple names
+
+#first, exact match against filers, assuming they are more recent, less dupes, and have locations to match  against
+
+#then exact match relation companies against  cik_name_lookup companies
+
+#insert companies for companies match on cik_name_lookup
+
+#fuzzy matcch company names. 
+
 
 
 #create companies for relationship companies that have not already been assigned a cik
@@ -85,6 +101,7 @@ where companies.cw_id = best_loc.cw_id");
 
 
 # --- PUT THE RELATIONS IN THE COMPANY RELATIONS TABLE -------
+#TODO: relationships tagged with CIK should use that instead of the clean_company to match on. 
 $db->do("insert into company_relations (relation_id, source_cw_id, target_cw_id, relation_origin, origin_id) select null, c.cw_id, d.cw_id, 'relationships', a.relationship_id from relationships a join filings b using (filing_id) join companies c on b.cik = c.cik join companies d on a.clean_company = d.company_name");
 
 # update the companies table with the counts of parents and children
