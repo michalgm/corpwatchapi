@@ -3,9 +3,10 @@ require 'common.pl';
 
 #use Text::JaroWinkler qw( strcmp95 );
 use Data::Dumper;
+use Parallel::ForkManager;
 select(STDOUT); $| = 1; #unbuffer STDOUT
 
-$match_table = '_company_matches';  #where the output goes
+$match_table = '_company_matches_fork_test';  #where the output goes
 
 $match_source = 'filer_names';  #what we match against:  'cw_companies' 'cik_names'  'relation_names' 'filer_names'
 
@@ -19,7 +20,7 @@ print "Matching against ".$match_source." saving results with score above ".$mat
 
 #get the sets of names we are gonna be comparing
 #$namequeries[1] = "select ucase(name),id  from fortune1000";   
-$namequeries[1] = "select ucase(clean_company),relationship_id as id,null,null from relationships";
+$namequeries[1] = "select lcase(clean_company),relationship_id as id,null,null from relationships";
 #$namequeries[2] = "select name,cw_id as id from company_names where source = 'filer_match_name' or source = 'relationships_clean_company' ";
 
 our $db;
@@ -48,7 +49,8 @@ if ($match_locations) {
 }
 
 my $clean;
-foreach ('1', '2') {
+#foreach ('1', '2') {
+foreach ('1') {
 	my $set = $_;
 	print "Fetching names $set...\n";
 	#$query = "select ucase(name) from person_names where (sourcetable= 'facultylist' or sourcetable='courtesyapps') group by ucase(name) order by name"; 
@@ -67,7 +69,6 @@ foreach ('1', '2') {
 #print Data::Dumper::Dumper($clean);
 print "Finding matches...\n";
 #prepare a statment for inserting matches into db.
-my $sth2 = $db->prepare("insert into $match_table (name1, name2, score, id_a, id_b,match_type) values (?,?,?,?,?,?)");
 
 my $count = 0;
 my $y = 0;
@@ -75,14 +76,18 @@ my $listsize = scalar(@{$clean->[1]});
 my $time = time();
 print "$count/$listsize\n";
 my $matches;
-my $percent = int($#{$clean->[1]}/100);
-
+my $percent = int($#{$clean->[1]}/2000);
+$db->disconnect;
+$manager = new Parallel::ForkManager( 5 );
+$manager->run_on_finish(
+	sub { $count++; }
+);
 #---------------------NAME MATCHING LOOP------------------
 #loop over the names, computing match score for each. 
 foreach my $names (@{$clean->[1]}) {
     #tracker to print out percent done
 	if ($y == $percent) { 
-		print "\r".int($count/$listsize*100) ."% (";
+		print "\r".$count/$listsize*100 ."% (";
 		my $ntime = time() - $time;
 		print "$ntime)";  
 		$y = 0; 
@@ -91,23 +96,30 @@ foreach my $names (@{$clean->[1]}) {
 	$y++;
 	
 	#get the name off the list
+	my $pid = $manager->start and next;
+	print ".";
 	my $name1 = ${$names}{name};
+	$db = &dbconnect();
 	#set up a query to get the a corresponding subset of names to match against
-	#print "getting matchlist for ".$name1."  (id: ".${$names}{id}.")";
+	#print "getting matchlist for ".$name1."  (id: ".${$names}{id}.")\n";
 	my @match_subset;
 	my $query = &name_subset_query($name1,$match_source);
 	#print ($query."\n");
     #my $sth3 = $db->prepare($query) || print "$DBI->errstr\n";
 	#$sth3->execute() || print "$DBI->errstr\n".$db->errstr;
 	#load the query results into array (assuming they already cleaned) 
-	while (my $row = $db->selectrow_arrayref($query)) { 
-	  	$record = {name=>$row->[0], id=>$row->[1],country_code=>$row->[2],subdiv_code=>$row->[3]};
-		push(@match_subset, $record);
-	}
-	if ($db->errstr){print $db->errstr."\n";}
+#	while (my $row = $db->selectrow_arrayref($query)) { 
+#	  	$record = {name=>$row->[0], id=>$row->[1],country_code=>$row->[2],subdiv_code=>$row->[3]};
+#		push(@match_subset, $record);
+#	}
+#	if ($db->errstr){print $db->errstr."\n";}
 	#print " comparing to ".scalar(@match_subset)." names.\n";
+	my $sth = $db->prepare($query);
+	$sth->execute;
+	#print "comparing ".$name1."  (id: ".${$names}{id}.") against ".$sth->rows." names:\n";
 	 
-	foreach my $names2 (@match_subset) {
+	while (my $row = $sth->fetchrow_arrayref) {
+	  	$names2 = {name=>$row->[0], id=>$row->[1],country_code=>$row->[2],subdiv_code=>$row->[3]};
 		#if (${$names}{primary_id} == ${$names2}{primary_id}) { next; }
 		my $name2 = ${$names2}{name};
 		#$matches->{$name1}->{$name2}->{'count'}++;
@@ -136,7 +148,8 @@ foreach my $names (@{$clean->[1]}) {
 			#print "\t".$name2." (bigram): ".$match."\n";
 			#if the match is above a threshold, insert in db
 			if ($match > $match_keep_level) { 
-				$sth2->execute($name1, $name2, $match, ${$names}{id}, ${$names2}{id},"bigram_".$match_locations); 
+				my $sth = $db->prepare_cached("insert into $match_table (name1, name2, score, id_a, id_b,match_type) values (?,?,?,?,?,?)");
+				$sth->execute($name1, $name2, $match, ${$names}{id}, ${$names2}{id},"bigram_".$match_locations); 
 			}
 			#print "\tbigram:$match";
 		} #else { print "dupe\n"; }
@@ -156,13 +169,17 @@ foreach my $names (@{$clean->[1]}) {
 		    $match += $loc_score; #add in the location score
 			#print "\t".$name2." (term_freq): ".$match."\n";
 			#if the match is above a threshold, insert in db
-			if ($match > $match_keep_level) { $sth2->execute($name1, $name2, $match, ${$names}{id}, ${$names2}{id},"term_".$match_locations); }
+			if ($match > $match_keep_level) { 
+				my $sth = $db->prepare_cached("insert into $match_table (name1, name2, score, id_a, id_b,match_type) values (?,?,?,?,?,?)");
+				$sth->execute($name1, $name2, $match, ${$names}{id}, ${$names2}{id},"term_".$match_locations); 
+			}
 			#print " term_freq:$match";
 		} #else { print "dupe\n"; }
 		
 	}
-	$count++;
+	$manager->finish;
 	#print total_size($clean)."\t".total_size($matches)."\t".total_size($sth)."\n";
+	#print "=============================\n";
 }	
 
 #$db->do("insert into $match_table select null, name2, name1, score from $match_table");
@@ -175,8 +192,8 @@ sub get_term_score() {
 	my $score = 0;
 	my $no_match_weight = 0.2;
 
-	my @tokens1 = split(/ /,lc($comp1));
-	my @tokens2 = split(/ /,lc($comp2));
+	my @tokens1 = split(/ /,$comp1);
+	my @tokens2 = split(/ /,$comp2);
 	
 	#//score=     2*(sum score tokens in comp) / (sum score comp1)+(sum score comp2);
 	my $sum1 =0;
@@ -257,7 +274,6 @@ sub get_bigram_score() {
 		#since it is not in our list of common tokens, assume it is rare
 			$sum2 += $no_match_weight ;
 		}
-
 	}
 	
 	#deal with case to avoid divide by zero
@@ -280,7 +296,7 @@ sub name_subset_query() {
   my @tokens1;
   
   #split the name on into tokens on space, kick out tokens that match the stopword list
-  foreach my $token (split(/ /,lc($comp1))) {
+  foreach my $token (split(/ /,$comp1)) {
    	if (!exists $stopterms{$token}) {
    		push(@tokens1,$token);
    	}
@@ -289,27 +305,27 @@ sub name_subset_query() {
   #if we are matching against all EDGAR names in cik lookup table
   if ($match_set eq "cik_names") {
 	  $first = pop(@tokens1);
-	   $query = "select ucase(match_name),cik as id,null,null from cik_name_lookup where match_name like '%".$first."%'";
+	   $query = "select lcase(match_name),cik as id,null,null from cik_name_lookup where match_name like '%".$first."%'";
 	  foreach my $token (@tokens1){
-	   	$query = $query." union distinct select ucase(match_name),cik as id ,null,null from cik_name_lookup where match_name like '%".$token."%'";
+	   	$query = $query." union distinct select lcase(match_name),cik as id ,null,null from cik_name_lookup where match_name like '%".$token."%'";
 	  }
    } 
    
    #use these queries if we are matching against names of companies in relationships table
      elsif ($match_set eq "relation_names") {
    		$first = pop(@tokens1);
-	   $query = "select ucase(clean_company), relationship_id as id, country_code,subdiv_code from relationships where clean_company like '%".$first."%' ";
+	   $query = "select lcase(clean_company) as name, relationship_id as id, country_code,subdiv_code from relationships where clean_company like '%".$first."%' ";
 	  foreach my $token (@tokens1){
-		 $query = $query."union distinct select ucase(clean_company), relationship_id as id,country_code,subdiv_code from relationships where clean_company like '%".$token."%' ";
+		 $query = $query."union distinct select lcase(clean_company), relationship_id as id,country_code,subdiv_code from relationships where clean_company like '%".$token."%' ";
       }
     } 
     
    #use these quries if we are only matching aginst company_names table	  
    elsif ($match_set eq "cw_companies") {
    		$first = pop(@tokens1);
-	   $query = "select ucase(name), cw_id as id,null,null from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$first."%' ";
+	   $query = "select lcase(name) as name, cw_id as id,null as country_code,null as subdiv_code from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$first."%' ";
 	  foreach my $token (@tokens1){
-	    $query = $query."union distinct select ucase(name), cw_id as id,null,null from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$token."%' ";
+	    $query = $query."union distinct select lcase(name), cw_id as id,null,null from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$token."%' ";
       }
     } 
     
@@ -317,9 +333,9 @@ sub name_subset_query() {
     #TODO: add location info
     elsif ($match_set eq "filer_names") {
    		$first = pop(@tokens1);
-	   $query = "select ucase(match_name), cik as id,null,null from filers where match_name like '%".$first."%' ";
+	   $query = "select lcase(match_name) as name, cik as id,null as country_code,null as subdiv_code from filers where match_name like '%".$first."%' ";
 	  foreach my $token (@tokens1){
-	    $query = $query."union distinct select ucase(match_name), cik as id, null,null from filers where match_name like '%".$token."%' ";
+	    $query = $query."union distinct select lcase(match_name), cik as id, null,null from filers where match_name like '%".$token."%' ";
       }
     }else {
        #uh oh, what should default be?
@@ -331,7 +347,7 @@ sub name_subset_query() {
 sub get_stopterms() {
 
    my %stopterms = ();
-   my $stopquery = "select word from word_freq order by count desc limit 75";
+   my $stopquery = "select lcase(word) from word_freq order by count desc limit 75";
    my $sth4 = $db->prepare($stopquery) || print "$DBI->errstr\n";
    $sth4->execute() || print "$DBI->errstr\n".$db->errstr;
 	#load the query results into the hash 
