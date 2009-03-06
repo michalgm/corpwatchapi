@@ -1,7 +1,4 @@
 #!/usr/bin/perl -w
-use utf8;
-use Text::Unidecode;
-
 require "./common.pl";
 $| = 1;
 our $db;
@@ -41,7 +38,6 @@ foreach my $relate (@$relates) {
 	my ($id, $company, $location) = @$relate;
     if ($x == $limit) { print "\r".++$y."%"; $x = 0; }
     #translate unicode to closest equivilent ascii
-	$company = unidecode($company);  
 	#substitute, strip puncucation, try to follow the SEC conform spec
 	$company = &clean_for_match($company);
 	if ($company) { 
