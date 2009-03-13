@@ -77,7 +77,7 @@ $db->do("insert into company_names (name_id, cw_id, name, date, source, source_r
 
 
 #put the relationships' locations that have been sucessfully tagged into the locations table
-$db->do("insert into company_locations (location_id,cw_id,date,type,raw_address,country_code,subdiv_code) select null,cw_id,filing_date,'relation_loc',location, country_code,subdiv_code from companies join relationships on source_type = 'relationships' and companies.row_id = relationships.relationship_id and location is not null
+$db->do("insert into company_locations (location_id,cw_id,date,type,raw_address,country_code,subdiv_code) select null,cw_id,filing_date,'relation_loc',location, country_code,subdiv_code from companies join relationships on source_type = 'relationships' and companies.source_id = relationships.relationship_id and location is not null
 join filings using (filing_id)");
 
 
