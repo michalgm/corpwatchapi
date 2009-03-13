@@ -148,6 +148,7 @@ sub parse_filers() {
 			push (@results, $values->{$key}) ;
 		}
 		$sth2->execute(@results);
+		last;
 	}
 	$tree->delete();
 	return $filers;
