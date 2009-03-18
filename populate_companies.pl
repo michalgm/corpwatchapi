@@ -23,6 +23,8 @@ $db->do("alter table company_relations auto_increment=0");
 $db->do("insert into companies (row_id, cik, company_name, irs_number, sic_category, source_type, source_id) select null, cik, match_name, max(irs_number), max(sic_code), 'filers', filer_id from filers group by cik");
 $db->do("update companies set cw_id = concat('cw_',row_id)");
 
+#TODO: need to collapse dupes, using irs id? Or collapse some of the match_name dupes?
+
 #put the match names of the filers in the names table
 
 $db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, match_name, filing_date, 'filer_match_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik group by companies.cik"); 
@@ -42,6 +44,7 @@ $db->do('insert into company_locations (location_id, cw_id, date, type, raw_addr
 $db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code) select null,cw_id,filing_date,"mailing",concat_ws(", ",mail_street_1, mail_street_2,mail_city,mail_state,mail_zip) raw, mail_street_1, mail_street_2,mail_city,mail_state,mail_zip from filers join companies using (cik) join filings using (filing_id) where mail_street_1 is not null');
 
 #/* fill in un country and subdiv codes o the filers where possible */
+#TODO; this should now be done in clean relationships script
 $db->do("update company_locations,region_codes set company_locations.country_code = region_codes.country_code, company_locations.subdiv_code = region_codes.subdiv_code where company_locations.state = region_codes.code");
 
 #fill in the sic hierarchy where we have sic codes
@@ -55,20 +58,38 @@ where companies.cw_id = sic.cw_id");
 #----- create companies for the relationship companies -------
 #try to assign CIKs to relationship companies
 #WARNING: SOME NAMES HAVE MULTIPLE CIKs, and some CIKs have multiple names
+print "-----Matching relationship companies...\n";
+print "\tChecking against parent companies...\n";
 
-#first, exact match against filers, assuming they are more recent, less dupes, and have locations to match  against
+#match cases where relationship company matches with filers name,cik, and location, these will be discarded later
+$db->do("update relationships a join filings b on a.filing_id = b.filing_id and b.has_sec21 =1 join filers c on b.cik = c.cik and a.clean_company = c.match_name and a.country_code = c.incorp_country_code and a.subdiv_code = c.incorp_subdiv_code set a.cik = c.cik");
 
-#then exact match relation companies against  cik_name_lookup companies
+#also tag the cases where one side of the location is missing
+$db->do("update relationships a join filings b on a.filing_id = b.filing_id and b.has_sec21 =1 join filers c on b.cik = c.cik and a.clean_company = c.match_name and (a.country_code is null or c.incorp_country_code is null) set a.cik=c.cik");
 
-#insert companies for companies match on cik_name_lookup
+#this query gives a list of companies that we didn't match to parents, but maybe we should have if a human could verify:
+#select a.company_name,c.conformed_name,a.country_code,a.subdiv_code,c.incorp_country_code,c.incorp_subdiv_code,c.business_state from relationships a join filings b on a.filing_id = b.filing_id and b.has_sec21 =1 and a.cik is null join filers c on b.cik = c.cik and a.clean_company = c.match_name 
+# set these cik of these to '-1' so that they won't be matched and can be reviewed by a human?
+$db->do("update relationships a join filings b on a.filing_id = b.filing_id and b.has_sec21 =1 and a.cik is null join filers c on b.cik = c.cik and a.clean_company = c.match_name set a.cik = -1");
+
+
+# exact match against filers, assuming they are more recent, less dupes, and have locations to match  against
+print "\tMatching relationship companies against filers (some filers are confuseable on match_name)..\n";
+#chose randomly between filers with the same match name
+$db->do("update relationships a join filers b on clean_company = match_name and a.country_code = b.incorp_country_code and a.subdiv_code = b.incorp_subdiv_code and a.cik is null set a.cik = b.cik");
+
+#then exact match the relationship companies against the master list of EDGAR CIK names to see if we can assign any ciks that way
+#WARNING:  SOME MATCH AGAINST MULTIPLE NAMES, CIK CHOSEN RANDOMLY
+$db->do("update relationships a join cik_name_lookup b on clean_company = match_name and a.cik is null set a.cik = b.cik");
+
+
 
 #fuzzy matcch company names. 
 
-
-
-#create companies for relationship companies that have not already been assigned a cik
-#TODO: skip 'companies' that match with strings in the non-companies table or match with locations -- unless this is being done now in pre preprocessing
-$db->do("insert into companies (row_id, cik, company_name, source_type, source_id) select null, cik, clean_company, 'relationships', relationship_id from relationships left join companies using (cik) where companies.cik is null group by clean_company");
+#resolve dupes on relationship companies
+print "creating relationship companies...\n";
+#create companies for relationship companies that are not from the filers list
+$db->do("insert into companies (row_id, cik, company_name, source_type, source_id) select null, cik, clean_company, 'relationships', relationship_id from relationships left join companies using (cik) where companies.cik is null group by clean_company,country_code,subdiv_code");
 $db->do("update companies set cw_id = concat('cw_',row_id)");
 
 #put those names into the names table
@@ -101,9 +122,18 @@ where companies.cw_id = best_loc.cw_id");
 
 
 # --- PUT THE RELATIONS IN THE COMPANY RELATIONS TABLE -------
-#TODO: relationships tagged with CIK should use that instead of the clean_company to match on. 
-$db->do("insert into company_relations (relation_id, source_cw_id, target_cw_id, relation_origin, origin_id) select null, c.cw_id, d.cw_id, 'relationships', a.relationship_id from relationships a join filings b using (filing_id) join companies c on b.cik = c.cik join companies d on a.clean_company = d.company_name");
+print "inserting relationships...\n";
+#ignore cases where company would be its own parent or child
+#insert relationships that have been tagged with CIK 
+$db->do("insert into company_relations (relation_id, source_cw_id, target_cw_id, relation_origin, origin_id) select null, c.cw_id, d.cw_id, 'relationships', a.relationship_id from relationships a join filings b using (filing_id) join companies c on b.cik = c.cik join companies d on a.cik = d.cik and a.cik is not null where c.cw_id != d.cw_id group by c.cw_id,d.cw_id");
 
+#insert the rest of the relationships, matching against the clean company name
+#make sure not to insert relations that have already been inserted
+#TODO:  THIS QUERY IS WRONG, INSERTS TOO MANY COMPANIES!
+$db->do("insert into company_relations (relation_id, source_cw_id, target_cw_id, relation_origin, origin_id) select null,c.cw_id, d.cw_id, 'relationships', a.relationship_id from relationships a join filings b using (filing_id) join companies c on b.cik = c.cik join companies d on a.clean_company = d.company_name left join company_relations e on origin_id = relationship_id and relation_origin = 'relationships' where c.cw_id != d.cw_id and e.origin_id is null group by c.cw_id,d.cw_id");
+
+
+print "updating company meta data...\n";
 # update the companies table with the counts of parents and children
 $db->do("update companies, (select companies.cw_id,
  count(distinct parents.source_cw_id) num_parents ,count(distinct kids.target_cw_id) num_children 
@@ -136,21 +166,7 @@ ELSE null
 END) as state,null,null,null,null from filers join companies using (cik) join filings using (filing_id)  having state is not null;
 
 
-/* MAKE ENTRIES FOR THE RELATIONSHIPS COMPANIES */
 
-/* Mark to Ignore names that are obviously headers or exact match with country or state name.*/
-
-/* match clean company names to clean cik lookup */
-/* create companies and names entries for cik_lookup names that are matched */
-
-/* match clean companies to existing company names */
-/* add remaining names as companies */
-/* match newly added non-cik companies to eachother*/
-
-/* add relationships to company_relations table */
-
-
-/* ADD URL FOR DOWNLOADING THE FILING FROM SEC TO THE FILINGS TABLE */
 
 
 
