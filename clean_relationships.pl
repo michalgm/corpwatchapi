@@ -76,10 +76,12 @@ foreach my $filer (@$filers) {
 	$x++;
 }
 
-print "Matching relationships...\n";
-#match the relationship companies against the master list of EDGAR CIK names to see if we can assign any ciks that way
-#WARNING:  SOME MATCH AGAINST MULTIPLE NAMES, CIK CHOSEN RANDOMLY
-$db->do("update relationships a join cik_name_lookup b on clean_company = match_name  set a.cik = b.cik where clean_company !=''");
+#convert the filer EDGAR state codes into un country and subdiv codes
+print "\nConverting Filer state of incorporation codes to un codes\n";
+$db->do("update filers join region_codes on state_of_incorporation = code  set incorp_country_code = country_code, incorp_subdiv_code = subdiv_code where state_of_incorporation is not null");
+
+
+
 
 sub match_relationships_locations() {
 	#/* a) match all that have two capital letters, and are in the table of us state codes  */
