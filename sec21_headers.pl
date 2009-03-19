@@ -63,32 +63,59 @@ foreach my $filing (@$filings) {
 			($tableinfo->{rows}, $tableinfo->{cols}) = ($#rows +1, $#cols+1);
 			print "\t Table: $#rows x $#cols";
 			foreach my $row (@rows) { 
+				my $hierarchy;
 				my $rowtext = '';
 				my @cells;
+				my $row_parsed = 0;
 				foreach my $cell (@$row) {
 					push(@cells, &strip_junk(&check_cell($cell)));
+					if (&check_cell($cell)) {
+						if ($hierarchy eq "" && &check_cell($cell)) {
+							if ($cell->as_HTML =~ /margin-left: ?([^;"]+);?( ?text-indent:?([^;"]+))?/i ) {
+								my ($marge, $indent) = ($1, $3);
+								$marge =~ s/(\s|px|em|pt|in)//g;
+								$indent =~ s/(\s|px|em|pt|in)//g;
+								if ($marge + $indent && $marge != $indent && $marge > 0 && "-$marge" != $indent) { 
+									$hierarchy = $marge + $indent;
+								}
+							}
+						}
+						if (my $t_rows_parsed = &search_elements($cell, $id,$tableinfo, $hierarchy)) {
+							$tableinfo->{rows_parsed} += $t_rows_parsed;
+							$row_parsed = 1;
+							last;
+						}
+					}
 				}
+				if ($row_parsed) { next; }
 				my $rowtext = join('|', @cells);
-				print "$rowtext\n";
+				if ($rowtext =~ /^([\|\s−]*\|)/) {
+					my $emptys = $1;
+					$hierarchy += $emptys =~ tr/\|//;
+				}
+				if ($hierarchy) {
+					#print " "x$hierarchy; print "$rowtext\n";
+				}
 				$rowtext =~ s/[\|\s]*\|/\|/g;
 				$rowtext =~ s/(^\||\|$)//g;
 				unless ($rowtext =~ /\w/) { next; }
 				if($rowtext !~ /\|/) {
+					print "----------$rowtext\n";
 					if (($company, $location) = &parse_single($rowtext)) {
-						if (&store_relationship($company, $location, $id, $tableinfo, 'simple table, single-parsed')) {
+						if (&store_relationship($company, $location, $id, $tableinfo, 'simple table, single-parsed', $hierarchy)) {
 							$tableinfo->{rows_parsed}++;
 							next;
 						}
 					}
 				} else {
 					my @parts = split(/\|/, $rowtext);
-					if (&store_relationship($parts[0], $parts[1], $id, $tableinfo, 'simple table, company|location')) {
+					if (&store_relationship($parts[0], $parts[1], $id, $tableinfo, 'simple table, company|location', $hierarchy)) {
 						$tableinfo->{rows_parsed}++;
 						next;
-					} elsif (&store_relationship($parts[0], $parts[2], $id, $tableinfo, 'simple table, |location|?|company')) {
+					} elsif (&store_relationship($parts[0], $parts[2], $id, $tableinfo, 'simple table, |location|?|company', $hierarchy)) {
 						$tableinfo->{rows_parsed}++;
 						next;
-					} elsif (&store_relationship($parts[2], $parts[1], $id, $tableinfo, 'simple table, |?|location|company')) {
+					} elsif (&store_relationship($parts[2], $parts[1], $id, $tableinfo, 'simple table, |?|location|company', $hierarchy)) {
 						$tableinfo->{rows_parsed}++;
 						next;
 					}
@@ -337,12 +364,12 @@ sub parse_table_by_headers {
 
 
 sub store_relationship {
-	my ($company, $location, $id,$tableinfo, $type) = @_;
+	my ($company, $location, $id,$tableinfo, $type, $hierarchy) = @_;
 	unless ($company && $location) { return; }
 	$company = &clean_contents($company);
 	$location = &clean_contents($location);
 	unless ($company && $location) { return; }
-	print "before:$company|$location|$type\n";
+	#print "before:$company|$location|$type\n";
 
 	foreach my $data ($location, $company) { 
 		if (length($data) >=300) { return; }
@@ -377,6 +404,7 @@ sub store_relationship {
 	$company =~ s/[;,\s\*]+$//g;
 	$company =~ s/^Exhibit [\d\.]+(( list of)? Subsidiaries( of( the)? ((registrant|company) )?)?)?//ig;
 	$company =~ s/ is a (substantially )?wholly-owned.*$//ig;
+	$company =~ s/[,\s]*(and its subsidiar(y|ies)|general partner of):?\s*$//gi;
 	foreach my $data ($location, $company) { 
 		my $sth5 = $db->prepare_cached("select term from parsing_stop_terms where term = ?");
 		$sth5->execute($data);
@@ -388,7 +416,7 @@ sub store_relationship {
 		if ($data =~ /^[^A-z]+$/) { return; }
 		if (length($data) > 120) { return; }
 	}
-	print "before:$company|$location|$type\n";
+	#print "before:$company|$location|$type\n";
 	my ($cc, $sc, $newlocation) =  &lookup_location($location);
 	my ($ccc, $csc, $newclocation) =  &lookup_location($company);
 	if ($cc && $ccc) { print "Both $location and $company $ccc $csc are locations\n"; return; }
@@ -403,18 +431,19 @@ sub store_relationship {
 		$sth->execute($company, $location,$id);
 		return;
 	}
-	print "after: $company|$location|$type\n";
+	#print "after: $company|$location|$type\n";
 	#print Data::Dumper::Dumper($tableinfo);
-	push(@{$tableinfo->{results}}, {company=>$company, location=>$newlocation, id=>$id, type=>$type, cc=>$cc, sc=>$sc});
+	push(@{$tableinfo->{results}}, {company=>$company, location=>$newlocation, id=>$id, type=>$type, cc=>$cc, sc=>$sc, hierarchy=>$hierarchy});
 	return 1;
 }
 
 sub store_results() {
 	my $result = shift;
 	#print Data::Dumper::Dumper($result);
-	my $sth = $db->prepare_cached("insert into $relationship_table (relationship_id, company_name, location, filing_id, parse_method, country_code, subdiv_code) values (null, ?, ?, ?, ?, ?, ?)");
-	if ($sth->execute($result->{company},$result->{location}, $result->{id}, $result->{type}, $result->{cc}, $result->{sc})) { 
-		#print "after|$company|$location|\n";
+	my $clean = &clean_for_match($result->{company});
+	my $sth = $db->prepare_cached("insert into $relationship_table (relationship_id, company_name, location, filing_id, parse_method, country_code, subdiv_code, hierarchy, clean_company) values (null, ?, ?, ?, ?, ?, ?,?,?)");
+	if ($sth->execute($result->{company},$result->{location}, $result->{id}, $result->{type}, $result->{cc}, $result->{sc}, $result->{hierarchy}, $clean)) { 
+		print "after|$result->{company}|$result->{location}|$result->{hierarchy}\n";
 		return 1;
 	} else { print $db->errstr; } 
 }
@@ -423,50 +452,70 @@ sub store_results() {
 sub parse_single() {
 	my $text = shift;
 	my ($company, $location);
-	print "hm: $text\n";
+	#print "In Parse Single: $text\n";
+	$parse_single_type = 0;
 	if ($text =~ /(.+?)(,|is|was) (an? |our )?(wholly-owned |private |s.p.a. )?(subsidiary |foreign sales corporation |company )?(incorporated|located|chartered) in (the )?(.+?)( and|\s\s+| \(.+|$)/sig) {
 		($company, $location) = ($1, $8);
+		$parse_single_type = 1;
 	}
 	if (!$company && $text =~ /(.+?)(, | \(|  )an? ([^\(]+?) (corporation|company|partnership|statutory trust|state[- ]chartered (commercial )?bank|business trust)\)?/sig) {
 		($company, $location) = ($1, $3);
+		$parse_single_type = 2;
 	}
 	if (!$company && $text =~ /(.+?)(, | \(|is )(a (corporation|national banking (association|organization)) )?(organized|incorporated) (and existing )?under the laws of (the )?([^\(]+)/sig) {
 		($company, $location) = ($1, $9);
+		$parse_single_type = 3;
 	}
 	if (!$company && $text =~ /(.+?)( is|, )? (formed|registered|incorporated|organized) (in|under) (the (laws of))?(.+?)($| and|\s\s+)/sig) {
 		($company, $location) = ($1, $7);
+		$parse_single_type = 4;
 	}
 	if (!$company && $text =~ /(\w.+?) ?[\(\[](.[^\)]+)[\]\)][\W0-9]*?( \(\d.+)?/sig) {
 		($company, $location) = ($1, $2);
+		$parse_single_type = 5;
 	}
 	if (!$company && $text =~ /^(\w.+) *jurisdiction of organization: ?(\w.+)$/i) {
 		($company, $location) = ($1, $2);
+		$parse_single_type = 6;
 	}
 	if (!$company && $text =~ /^(\w.+?) ?(–|&#15[01];|-) ?(\w.+)$/) {
 		($company, $location) = ($1, $3);
+		$parse_single_type = 7;
 	}
 	if (!$company && $text =~ /^(\w.+?)\s\s\s+(\w.+)$/) {
 		($company, $location) = ($1, $2);
+		$parse_single_type = 8;
 	}
 	if (!$company && $text =~ /^(\w.+?)  .*  (\w.+)$/) {
 		($company, $location) = ($1, $2);
+		$parse_single_type = 9;
 	}
-	if (!$company && $text =~ /(\w.+?) \(?(.+?)\)?(\.|,| |ltd|company||co|S\.?(A\.?)?(R\.?L\.?)?|limited|inc|incorporated|corp|pty|private|gmbh|L\.?P\.?|B\.?V\.?|SAE|S\.?A\.?S\?|AG|partnership)*$/i) {
+	if (!$company && $text =~ /(\w.+?) \(?(.+?)\)?(\.|,| )+(\.|,| |ltd|company|co|S\.?(A\.?)?(R\.?L\.?)?|limited|inc|incorporated|corp|pty|private|gmbh|L\.?P\.?|B\.?V\.?|SAE|S\.?A\.?S\?|AG|partnership)+$/i) {
 		($company, $location) = ($text, $2);
+		$parse_single_type = 10;
 	}
-	#print "$company|$location\n";
+	#print "End of parse_single: $company|$location|$parse_single_type\n";
 	return ($company, $location);
 }
 
 sub search_elements {
-	my ($elem, $id,$tableinfo) = @_;
+	my ($elem, $id,$tableinfo, $hierarchy) = @_;
 	my $found = 0;
 	#print ref($elem);
 	foreach my $type ('div', 'p', 'font', 'pre') {
 		foreach my $div ($elem->find($type)) {
 			if ($div->as_HTML =~ /.<$type/) { next; }
+
 			#if ($div->find('div','p', 'font')) { next; }
-			my ($company, $location);
+			my ($company, $location, $hierarchy);
+			if ($div->as_HTML =~ /margin-left: ?([^;"]+);?( ?text-indent:?([^;"]+))?/i ) {
+				my ($marge, $indent) = ($1, $3);
+				$marge =~ s/(\s|px|em|pt|in|%)//g;
+				$indent =~ s/(\s|px|em|pt|in|%)//g;
+				if ($marge + $indent && $marge != $indent && $marge > 0 && "-$marge" != $indent) { 
+					$hierarchy = $marge + $indent;
+				}
+			}
 			my $text = $div->as_text;
 			if (($type eq 'pre' &&  $div->as_HTML =~ /\n/) || $div->as_HTML =~ /<br ?\/?>/i) {
 				my @lines;
@@ -483,7 +532,7 @@ sub search_elements {
 					$text = &strip_junk($text);
 					#print "*$text\n";
 					($company, $location) = &parse_single($text);
-					if(&store_relationship($company,$location,$id,$tableinfo, "parsed from $type via br")) {
+					if(&store_relationship($company,$location,$id,$tableinfo, "parsed from $type via br", $hierarchy)) {
 						$found++;
 					}
 				}	
@@ -495,9 +544,10 @@ sub search_elements {
 				my @results;
 				$text = &strip_junk($text);
 				($company, $location) = &parse_single($text);
+				
 					#print "$company - $location - $id\n";
 					#print "$company, $location\n";
-				if (&store_relationship($company,$location,$id,$tableinfo, "parsed from $type")) {
+				if (&store_relationship($company,$location,$id,$tableinfo, "parsed from $type", $hierarchy)) {
 					$found++;
 				}
 			}
@@ -512,7 +562,7 @@ sub search_elements {
 				$location = "$1, $2";
 				$parts[0] =~ s/^<td[^>]+>//i;
 				($company, $location) = (HTML::Entities::decode_entities($parts[0]), HTML::Entities::decode_entities($location));
-				if (&store_relationship($company,$location,$id,$tableinfo, "parsed from full address")) {
+				if (&store_relationship($company,$location,$id,$tableinfo, "parsed from full address", $hierarchy)) {
 					$found++;
 				}
 				#if (&store_relationship($company,$location,$id,$tableinfo, 'single parsed from table')) {
@@ -540,7 +590,8 @@ sub strip_junk {
 	$text =~ s/^[\d\.]% (owned )?by.*$//ig;
 	$text =~ s/^[\d+\.%]+[%\.] ?//ig;
 	$text =~ s/^(list of subsidiaries|registrant)//gi;
-	$text =~ s/(general)$//gi;
+	$text =~ s/(general| and its subsidiar(y|ies):?)\s*$//gi;
+
 	$text =~ s/[ ,]+$//;
 	$text =~ s/\.\.+/\//g;
 	return $text;
@@ -573,7 +624,7 @@ sub lookup_location {
 	$location =~ s/(corporation|company|organization|(general )?partnership|corp)$//ig;
 	$location =~ s/\(([^\)]+)\)/, $2/;
 	$location = &strip_junk($location);
-	print "##$location\n";	
+	#print "##$location\n";	
 	if ($location =~ /^.$/) { return; }
 	my ($cc, $sc);
 	if ($location =~ /delaware/i) {
@@ -581,7 +632,7 @@ sub lookup_location {
 	} elsif ($location =~ /,/) {		
 		my ($first, $second) = split(/, ?/, $location, 2);
 		foreach ($first, $second) {
-			print "$$ $first | $second\n";
+			#print "$$ $first | $second\n";
 			if ($_ =~ /^(INC|LTD|LLC|.|\d+)$/ig) { return; }
 		}
 		my $country_order = 2;

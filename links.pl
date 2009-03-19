@@ -59,11 +59,24 @@ if ($action eq 'index') {
 		print $link;
 	}
 } elsif ($action eq 'lookup') {
-	$relates = $db->selectall_arrayref("select * from relationships where filing_id = ".param('id')." order by relationship_id") || die "$!";
+	my $sth = $db->prepare("select * from relationships where filing_id = ".param('id')." order by relationship_id") || die "$!";
+	$sth->execute();
 	print "<table border=1>";
-	if (! $relates->[0]) { print "no relationships found"; }
-	foreach $relate (@$relates) {
-		print "<tr><td>$relate->[1]</td><td>$relate->[2]</td><td>$relate->[9]</td></tr>\n";
+	#if (! $relates[0]) { print "no relationships found"; }
+	my $level = 0;
+	my $parents = [0];
+	while (my $relate =  $sth->fetchrow_hashref()) {
+		my $parent = $relate->{hierarchy};
+		unless ($parent) { $parent = 0; }
+		if ($parent > $parents->[$level]) {
+			$level++;
+		} elsif ($parent <= $parents->[$level]) {
+			while ($parent < $parents->[$level] && $level > 0) {
+				$level--;
+			}
+		}
+		$parents->[$level] = $parent;
+		print "<tr><td>"."&nbsp;"x($level*4)."$relate->{company_name}</td><td>$relate->{location}</td><td>$relate->{parse_method}</td></tr>\n";
 	}
 	print "</table>";
 } else {
