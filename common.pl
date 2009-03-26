@@ -34,6 +34,16 @@ sub clean_for_match() {
 	$name =~ s/\b([SA])\.([AL])\.\b/$1$2/gi;
 	$name =~ s/\b(INC|CO|JR|SR|LTD|CORP|LLC)\./$1/gi;
 	$name =~ s/( ?([\/\\]\w{0,3})?[\/\\]?)*$//;
+
+	$name =~ s/^(A|AN|THE)\b//gi;
+	$name =~ s/\bAND\b/&/gi;
+	$name =~ s/ (Incorporated|Incorporation)\b/ Inc/gi;
+	$name =~ s/ Company\b/ Co/gi;
+	$name =~ s/ Corporation\b/ Corp/gi;
+	$name =~ s/ Limited\b(?! Partnership)/ Ltd/gi;
+	$name =~ s/\bJunior\b/Jr/gi;
+	$name =~ s/\bSenior\b/Sr/gi;
+
 	$name =~ s/\s\s+/ /g;
 	$name =~ s/(^\s+|\s+$)//g;
 
@@ -56,16 +66,16 @@ sub list_bigrams() {
 }
 
 sub dbconnect {
-	my $db = shift;
-	unless($db) { $db = 'edgarapi';}
-	my $dsn = "dbi:mysql:$db:localhost;mysql_compression=1";
+	my $dbname = shift;
+	unless($dbname) { $dbname = 'edgarapi';}
+	my $dsn = "dbi:mysql:$dbname:localhost;mysql_compression=1";
 	my $dbh;
 	while (!$dbh) {
 		$dbh = DBI->connect($dsn, 'edgar', 'edgar', {'mysql_enable_utf8'=>1});
-		unless ($dbh) {
-			print("Unable to Connect to database\n");
-			sleep(10);
-		}
+		#unless ($dbh) {
+		#	print("Unable to Connect to database\n");
+			#sleep(10);
+		#}
 	}
 	$dbh->{'mysql_auto_reconnect'} = 1;
 	return $dbh;
