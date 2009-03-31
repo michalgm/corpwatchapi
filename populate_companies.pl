@@ -17,9 +17,11 @@ require "common.pl";
 exit;
 
 sub cleanTables() {
+	print "Updating cw_id_lookup...\n";
+	$db->do("insert ignore into cw_id_lookup (cw_id, company_name, cik) select a.cw_id, a.company_name, a.cik from companies a");
 	print "Resetting tables...\n";
 	$db->do("delete from companies");
-	$db->do("alter table companies auto_increment=0");
+# 	We shouldn't ever reset the auto_increment on companies anymore	$db->do("alter table companies auto_increment=0");
 	$db->do("delete from company_names");
 	$db->do("alter table company_names auto_increment=0");
 	$db->do("delete from company_locations");
@@ -27,28 +29,35 @@ sub cleanTables() {
 	$db->do("delete from company_relations");
 	$db->do("alter table company_relations auto_increment=0");
 	$db->do("update relationships set cw_id = NULL, parent_cw_id = null");
+	$db->do("update filers set cw_id = NULL");
+	#Repair table state, if we lft it in a bad state
+	$db->do("alter table relationships add key cw_id (cw_id)");
+	$db->do("alter table companies enable keys");
+	$db->do("alter table relationships add key parent_cw_id (parent_cw_id)");
 }
 
 sub insertFilers() {
 
 	print "Inserting Filers...\n";
 
+	# fill in cw_ids for filers from cw_id_lookup
+	$db->do("update filers a join cw_id_lookup b on company_name = match_name and a.cik = b.cik set a.cw_id = b.cw_id");
+	$db->do("update filers a join cw_id_lookup b on company_name = match_name and a.cik is null and b.cik is null set a.cw_id = b.cw_id");
 	# ---- make company entries for each of the filers ----
-
-	$db->do("insert into companies (row_id, cik, company_name, irs_number, sic_category, source_type, source_id) select null, cik, match_name, max(irs_number), max(sic_code), 'filers', filer_id from filers group by cik");
+	$db->do("insert into companies (cw_id, row_id, cik, company_name, irs_number, sic_category, source_type, source_id) select cw_id, replace(cw_id, 'cw_', ''), cik, match_name, max(irs_number), max(sic_code), 'filers', filer_id from filers group by cik");
 	$db->do("update companies set cw_id = concat('cw_',row_id)");
 
 	#TODO: need to collapse dupes, using irs id? Or collapse some of the match_name dupes?
 
 	#put the match names of the filers in the names table
 
-	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, match_name, filing_date, 'filer_match_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik group by companies.cik"); 
+	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,filers.cw_id, match_name, filing_date, 'filer_match_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik group by companies.cik"); 
 
 	#put in  the edgar "conformed" name if it is differnt from the match_name
-	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, conformed_name, filing_date, 'filer_conformed_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik where conformed_name != match_name group by companies.cik"); 
+	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,filers.cw_id, conformed_name, filing_date, 'filer_conformed_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik where conformed_name != match_name group by companies.cik"); 
 
 	#insert former names of filers into the names table (if there are any)
-	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id, former_name,date(name_change_date), 'filer_former_name', filer_id from filers join companies using (cik) where former_name is not null");
+	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,filers.cw_id, former_name,date(name_change_date), 'filer_former_name', filer_id from filers join companies using (cik) where former_name is not null");
 
 	#if we are using the html forms as the source, we won't have former names of filers.  So instead, get them from the cik_name_lookup.  Only problem is that we don't have the name change date :-(
 	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,cw_id,cik_name_lookup.match_name,null as date,'cik_former_name',cik_name_lookup.row_id from company_names join companies using (cw_id) join cik_name_lookup using (cik) where source = 'filer_match_name' and name != cik_name_lookup.match_name group by cw_id,match_name");
@@ -57,19 +66,15 @@ sub insertFilers() {
 
 	print "Inserting Filer Location and SIC info...\n";
 	#/* put the biz address, mail address, and name state suffix in locations with id*/
-	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code) select null,cw_id,filing_date,"business",concat_ws(", ",business_street_1, business_street_2,business_city,business_state,business_zip) raw, business_street_1, business_street_2,business_city,business_state,business_zip from filers join companies using (cik) join filings using (filing_id) where business_street_1 is not null');
-	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code) select null,cw_id,filing_date,"mailing",concat_ws(", ",mail_street_1, mail_street_2,mail_city,mail_state,mail_zip) raw, mail_street_1, mail_street_2,mail_city,mail_state,mail_zip from filers join companies using (cik) join filings using (filing_id) where mail_street_1 is not null');
+	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code) select null,companies.cw_id,filing_date,"business",concat_ws(", ",business_street_1, business_street_2,business_city,business_state,business_zip) raw, business_street_1, business_street_2,business_city,business_state,business_zip from filers join companies using (cik) join filings using (filing_id) where business_street_1 is not null');
+	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code) select null,companies.cw_id,filing_date,"mailing",concat_ws(", ",mail_street_1, mail_street_2,mail_city,mail_state,mail_zip) raw, mail_street_1, mail_street_2,mail_city,mail_state,mail_zip from filers join companies using (cik) join filings using (filing_id) where mail_street_1 is not null');
 
 	#/* fill in un country and subdiv codes o the filers where possible */
 	#TODO; this should now be done in clean relationships script
 	$db->do("update company_locations,region_codes set company_locations.country_code = region_codes.country_code, company_locations.subdiv_code = region_codes.subdiv_code where company_locations.state = region_codes.code");
 
 	#fill in the sic hierarchy where we have sic codes
-	$db->do("update companies, (select cw_id,sic_category, sic_codes.industry_name, sic_sectors.sic_sector, sic_sectors.sector_name from companies join sic_codes on sic_category=sic_code join sic_sectors on sic_codes.sic_sector = sic_sectors.sic_sector) sic
-	set companies.industry_name = sic.industry_name,
-	companies.sic_sector = sic.sic_sector,
-	companies.sector_name = sic.sector_name
-	where companies.cw_id = sic.cw_id");
+	$db->do("update companies, (select cw_id,sic_category, sic_codes.industry_name, sic_sectors.sic_sector, sic_sectors.sector_name from companies join sic_codes on sic_category=sic_code join sic_sectors on sic_codes.sic_sector = sic_sectors.sic_sector) sic set companies.industry_name = sic.industry_name, companies.sic_sector = sic.sic_sector, companies.sector_name = sic.sector_name where companies.cw_id = sic.cw_id");
 }
 
 sub matchRelationships() {
@@ -99,6 +104,9 @@ sub matchRelationships() {
 	#then exact match the relationship companies against the master list of EDGAR CIK names to see if we can assign any ciks that way
 	#WARNING:  SOME MATCH AGAINST MULTIPLE NAMES, CIK CHOSEN RANDOMLY
 	$db->do("update relationships a join cik_name_lookup b on clean_company = match_name and a.cik is null set a.cik = b.cik");
+	#Fill in cw_ids for relationships from cw_id_lookup
+	$db->do("update relationships a join cw_id_lookup b on clean_company = b.company_name and a.cik = b.cik and a.cik is not null and a.cw_id is null set a.cw_id = b.cw_id");
+	$db->do("update relationships a join cw_id_lookup b on clean_company = b.company_name and a.cik is null and b.cik is null and a.cw_id is null set a.cw_id = b.cw_id");
 }
 
 sub createRelationshipCompanies() {
@@ -106,6 +114,7 @@ sub createRelationshipCompanies() {
 	#resolve dupes on relationship companies
 	print "creating relationship companies...\n";
 	#create companies for relationship companies that are not from the filers list
+	$db->do("insert into companies (cik, row_id, company_name, source_type, source_id) select a.cik, replace(a.cw_id, 'cw_', ''), clean_company, 'previous relationships', relationship_id from relationships a left join companies b on clean_company = b.company_name and a.cik = b.cik where b.cw_id is null and a.cw_id is not null group by a.cw_id");
 	my $sth = $db->prepare("select cik, clean_company, relationship_id from relationships left join companies using (cik) where companies.cik is null and relationships.cw_id is null");
 	$sth->execute();
 	$db->do("alter table relationships drop key cw_id");
@@ -115,19 +124,19 @@ sub createRelationshipCompanies() {
 		my $existing_cw_id;
 		#my $sth2 = $db->prepare_cached("select row_id from companies where company_name = ? and source_type = 'relationships' limit 1");
 		#$sth2->execute($relate->{clean_company});
-		if ($inserted_companies->{$relate->{clean_company}}) {
-			$existing_cw_id = $inserted_companies->{$relate->{clean_company}};
+		if ($inserted_companies->{uc($relate->{clean_company})}) {
+			$existing_cw_id = $inserted_companies->{uc($relate->{clean_company})};
 		} else {
 			$db->prepare_cached("insert into companies (cik, company_name, source_type, source_id) values (?,?,'relationships',?)")->execute($relate->{cik}, $relate->{clean_company}, $relate->{relationship_id});
 			$existing_cw_id = $db->last_insert_id(undef, 'edgarapi', 'companies', 'row_id');	
-			$inserted_companies->{$relate->{clean_company}} = $existing_cw_id;
+			$inserted_companies->{uc($relate->{clean_company})} = $existing_cw_id;
 		}
 		#print "$relate->{relationship_id} : $existing_cw_id\n";
 		#$sth2->finish;
 		$db->prepare_cached("update relationships set cw_id = ? where relationship_id = ?")->execute("cw_".$existing_cw_id, $relate->{relationship_id});
 	}
 	#$db->do("insert into companies (row_id, cik, company_name, source_type, source_id) select null, cik, clean_company, 'relationships', relationship_id from relationships left join companies using (cik) where companies.cik is null group by clean_company,country_code,subdiv_code, cik");
-	$db->do("update companies set cw_id = concat('cw_',row_id)");
+	$db->do("update companies set cw_id = concat('cw_',row_id) where cw_id not like 'cw_%' or cw_id is null");
 	$db->do("alter table relationships add key cw_id (cw_id)");
 	$db->do("alter table companies enable keys");
 	$db->do("update relationships a join companies b using (cik) set a.cw_id = b.cw_id where a.cw_id is null and b.cik is not null");
@@ -193,7 +202,7 @@ sub insertRelationships() {
 			if ($level == 0) { $parent_id = 0; } 
 			if ($parent_id ne $cw_id && $parent_id ne 0) {	
 				my $sth = $db->prepare_cached("update relationships set parent_cw_id = ? where cw_id = ?");
-		#		print "\t$cw_id: $parent_id\n";
+				#print "\t$cw_id: $parent_id\n";
 				$sth->execute($parent_id, $cw_id) || die "this died";
 			}
 		}
