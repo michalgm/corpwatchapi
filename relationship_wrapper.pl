@@ -31,10 +31,11 @@ foreach my $filing (@$filings) {
 	$x++;
 
 	$manager->start and next;
+	my $time = time();
 	$null = `$cmd`;
 	print LOG "$null";
 	#print `$cmd`;
-	print LOG "$filing->[0] finished\n";
+	print LOG "$filing->[0] finished: ".(time() - $time)."\n";
 	$manager->finish;
 }
 
