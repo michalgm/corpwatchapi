@@ -46,6 +46,7 @@ foreach my $filing (@$filings) {
 		$has_html = 1;
 		my $html = $1;
 		$html =~ s/<tr[^>]*>[^<]*<tr/<tr/gsi;
+		$html =~ s/<su[pb][^>]*>[^<]*<\/su[pb]>//gsi;
 		#print $html;
 		$p->parse($html);	
 		my ($rowskip, $g_company_col, $g_local_col);
@@ -490,6 +491,7 @@ sub parse_single() {
 		($company, $location) = ($1, $2);
 		$parse_single_type = 9;
 	}
+	$text =~ s/\s\s+/ /g;	
 	if (!$company && $text =~ /(\w.+?) \(?(.+?)\)?(\.|,| )+(\.|,| |ltd|company|co|S\.?(A\.?)?(R\.?L\.?)?|limited|inc|incorporated|corp|pty|private|gmbh|L\.?P\.?|B\.?V\.?|SAE|S\.?A\.?S\?|AG|partnership)+$/i) {
 		($company, $location) = ($text, $2);
 		$parse_single_type = 10;
