@@ -114,7 +114,7 @@ sub createRelationshipCompanies() {
 	#resolve dupes on relationship companies
 	print "creating relationship companies...\n";
 	#create companies for relationship companies that are not from the filers list
-	$db->do("insert into companies (cik, row_id, company_name, source_type, source_id) select a.cik, replace(a.cw_id, 'cw_', ''), clean_company, 'previous relationships', relationship_id from relationships a left join companies b on clean_company = b.company_name and a.cik = b.cik where b.cw_id is null and a.cw_id is not null group by a.cw_id");
+	$db->do("insert into companies (cik, row_id, company_name, source_type, source_id) select a.cik, replace(a.cw_id, 'cw_', ''), clean_company, 'relationships', relationship_id from relationships a left join companies b on clean_company = b.company_name and a.cik = b.cik where b.cw_id is null and a.cw_id is not null group by a.cw_id");
 	my $sth = $db->prepare("select cik, clean_company, relationship_id from relationships left join companies using (cik) where companies.cik is null and relationships.cw_id is null");
 	$sth->execute();
 	$db->do("alter table relationships drop key cw_id");
@@ -145,8 +145,8 @@ sub createRelationshipCompanies() {
 sub insertNamesAndLocations() {
 	print "inserting names and locations...\n";
 	#put those names into the names table
-	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships'");
-	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, clean_company, filing_date, 'relationships_clean_company', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships' and a.company_name != clean_company");
+	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships' group by b.cw_id, clean_company");
+	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, clean_company, filing_date, 'relationships_clean_company', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships' and a.company_name != clean_company group by b.cw_id, clean_company");
 
 
 	#put the relationships' locations that have been sucessfully tagged into the locations table
