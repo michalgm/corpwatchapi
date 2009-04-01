@@ -69,6 +69,9 @@ sub insertFilers() {
 	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code) select null,companies.cw_id,filing_date,"business",concat_ws(", ",business_street_1, business_street_2,business_city,business_state,business_zip) raw, business_street_1, business_street_2,business_city,business_state,business_zip from filers join companies using (cik) join filings using (filing_id) where business_street_1 is not null');
 	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code) select null,companies.cw_id,filing_date,"mailing",concat_ws(", ",mail_street_1, mail_street_2,mail_city,mail_state,mail_zip) raw, mail_street_1, mail_street_2,mail_city,mail_state,mail_zip from filers join companies using (cik) join filings using (filing_id) where mail_street_1 is not null');
 
+#add in locations for the state of incorporation of filers.  This query maybe not quite correct, as info was scraped, not from filings?
+    $db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, country_code, subdiv_code) select null,companies.cw_id,filing_date,"state_of_incorp",state_of_incorporation raw, incorp_country_code,incorp_subdiv_code from filers join companies using (cik) join filings using (filing_id) where state_of_incorporation is not null');
+
 	#/* fill in un country and subdiv codes o the filers where possible */
 	#TODO; this should now be done in clean relationships script
 	$db->do("update company_locations,region_codes set company_locations.country_code = region_codes.country_code, company_locations.subdiv_code = region_codes.subdiv_code where company_locations.state = region_codes.code");
