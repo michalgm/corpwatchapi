@@ -16,6 +16,7 @@ require "common.pl";
 &insertRelationships();
 exit;
 
+#clear out the tables and preparse for receiving new data
 sub cleanTables() {
 	print "Updating cw_id_lookup...\n";
 	$db->do("insert ignore into cw_id_lookup (cw_id, company_name, cik) select a.cw_id, a.company_name, a.cik from companies a");
@@ -36,6 +37,7 @@ sub cleanTables() {
 	$db->do("alter table relationships add key parent_cw_id (parent_cw_id)");
 }
 
+#The filers are the companies that we have at least some info from the SEC about, not just 10-k filers
 sub insertFilers() {
 
 	print "Inserting Filers...\n";
@@ -80,6 +82,7 @@ sub insertFilers() {
 	$db->do("update companies, (select cw_id,sic_category, sic_codes.industry_name, sic_sectors.sic_sector, sic_sectors.sector_name from companies join sic_codes on sic_category=sic_code join sic_sectors on sic_codes.sic_sector = sic_sectors.sic_sector) sic set companies.industry_name = sic.industry_name, companies.sic_sector = sic.sic_sector, companies.sector_name = sic.sector_name where companies.cw_id = sic.cw_id");
 }
 
+#this section processes the companies that we have scraped out of the filer's section 21 filings, in many cases we don't have SEC info
 sub matchRelationships() {
 	#----- create companies for the relationship companies -------
 	#try to assign CIKs to relationship companies
@@ -148,8 +151,9 @@ sub createRelationshipCompanies() {
 sub insertNamesAndLocations() {
 	print "inserting names and locations...\n";
 	#put those names into the names table
-	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id from relationships a join companies b on b.cw_id = a.cw_id join filings c using(filing_id) where b.source_type = 'relationships' group by b.cw_id, company_name");
-	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, clean_company, filing_date, 'relationships_clean_company', relationship_id from relationships a join companies b on b.cw_id = a.cw_id join filings c using(filing_id) where b.source_type = 'relationships' and a.company_name != clean_company group by b.cw_id, clean_company");
+	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id from relationships a join companies b on b.cw_id = a.cw_id join filings c using(filing_id) where b.source_type = 'relationships' group by b.cw_id, company_name collate 'utf8_bin'");
+   #if the original name is differnt than the clean name, put that in. 
+	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, clean_company, filing_date, 'relationships_clean_company', relationship_id from relationships a join companies b on b.cw_id = a.cw_id join filings c using(filing_id) where b.source_type = 'relationships' and a.company_name collate 'utf8_bin' != clean_company collate 'utf8_bin' group by b.cw_id, clean_company collate 'utf8_bin'");
 
 
 	#put the relationships' locations that have been sucessfully tagged into the locations table
