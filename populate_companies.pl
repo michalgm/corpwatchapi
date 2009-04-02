@@ -148,8 +148,8 @@ sub createRelationshipCompanies() {
 sub insertNamesAndLocations() {
 	print "inserting names and locations...\n";
 	#put those names into the names table
-	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships' group by b.cw_id, clean_company");
-	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, clean_company, filing_date, 'relationships_clean_company', relationship_id from relationships a join companies b on b.company_name = clean_company join filings c using(filing_id) where b.source_type = 'relationships' and a.company_name != clean_company group by b.cw_id, clean_company");
+	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id from relationships a join companies b on b.cw_id = a.cw_id join filings c using(filing_id) where b.source_type = 'relationships' group by b.cw_id, company_name");
+	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, clean_company, filing_date, 'relationships_clean_company', relationship_id from relationships a join companies b on b.cw_id = a.cw_id join filings c using(filing_id) where b.source_type = 'relationships' and a.company_name != clean_company group by b.cw_id, clean_company");
 
 
 	#put the relationships' locations that have been sucessfully tagged into the locations table
