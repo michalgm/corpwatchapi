@@ -2,7 +2,7 @@
 use Parallel::ForkManager;
 
 require "./common.pl";
-$| =1;
+#$| =1;
 our $db;
 my $relationship_table = 'relationships';
 open (LOG, ">log.txt");
@@ -12,14 +12,14 @@ $db->do("delete from filing_tables");
 $db->do("delete from bad_locations");
 $db->do("alter table $relationship_table auto_increment = 0");
 #$db->do("alter table $relationship_table disable keys");
-#$db->do("alter table filing_table disable keys");
+#$db->do("alter table filing_tables disable keys");
 $db->do("alter table filing_tables auto_increment = 0");
 $db->do("alter table bad_locations auto_increment = 0");
 print "done\n";
 
 my $filings = $db->selectall_arrayref("select filing_id, filename, quarter, year, cik, company_name from filings where has_sec21 = 1 order by filing_id") || die "$!";
 
-my $manager = new Parallel::ForkManager( 6 );
+my $manager = new Parallel::ForkManager( 60 );
 my ($x, $y) = 0;
 my $limit = int($#${filings}*.01);
 print "$#${filings} - $limit\n";
