@@ -6,11 +6,11 @@ use Data::Dumper;
 use Parallel::ForkManager;
 select(STDOUT); $| = 1; #unbuffer STDOUT
 
-$match_table = '_company_matches_fork_test';  #where the output goes
+$match_table = '_croc_company_matches';  #where the output goes
 
-$match_source = 'filer_names';  #what we match against:  'cw_companies' 'cik_names'  'relation_names' 'filer_names'
+$match_source = 'cw_companies';  #what we match against:  'cw_companies' 'cik_names'  'relation_names' 'filer_names'
 
-$match_keep_level = 70;  # only put matches in db if bigger than this
+$match_keep_level = 75;  # only put matches in db if bigger than this
 $efficient_matching = 0;  #only match in one direction based on id
 $match_locations = 0;  #include location informtion in the match scores
 
@@ -20,20 +20,20 @@ print "Matching against ".$match_source." saving results with score above ".$mat
 
 #get the sets of names we are gonna be comparing
 #$namequeries[1] = "select ucase(name),id  from fortune1000";   
-$namequeries[1] = "select lcase(clean_company),relationship_id as id,null,null from relationships";
+#$namequeries[1] = "select lcase(clean_company),relationship_id as id,null,null from relationships";
+$namequeries[1] = "select lcase(croc_company_name), row_id as id from croc_companies";
 #$namequeries[2] = "select name,cw_id as id from company_names where source = 'filer_match_name' or source = 'relationships_clean_company' ";
 
 our $db;
 
-#debug
 
-my %stopterms = &get_stopterms();
+%stopterms = &get_stopterms();
 
 $db->do("DROP TABLE IF EXISTS `$match_table`");
 $db->do("CREATE TABLE `$match_table` ( `id` int(11) NOT NULL auto_increment, `name1` varchar(255) default NULL, `name2` varchar(255) default NULL, `score` decimal(5,2) default NULL, id_a varchar(25), id_b varchar(25),`match_type` varchar(10), `match` int(1) default 0, PRIMARY KEY  (`id`), KEY `id1` (`name1`), KEY `id2` (`name2`), KEY `score` (`score`))"); 
 
 #load in the single word frequency rates
-my $weights = $db->selectall_hashref("select word, weight from word_freq", 'word');
+my $weights = $db->selectall_hashref("select lcase(word) as word, weight from word_freq", 'word');
 
 #load in the bigram frequency rates
 my $bi_weights = $db->selectall_hashref("select bigram, weight from bigram_freq", 'bigram');
@@ -158,6 +158,7 @@ foreach my $names (@{$clean->[1]}) {
 		#if matching efficiently, only match pair in one direction
 		unless ($efficient_matching && ${$names}{id} > ${$names2}{id}) {
 			my $match = 0;
+			
 			if ($name1 eq $name2) { 
 				$match = 100;  
 			} else {
@@ -165,7 +166,7 @@ foreach my $names (@{$clean->[1]}) {
 				$match *=100;
 				unless ($match) { $match = 0; }
 			}
-			
+		
 		    $match += $loc_score; #add in the location score
 			#print "\t".$name2." (term_freq): ".$match."\n";
 			#if the match is above a threshold, insert in db
@@ -199,7 +200,9 @@ sub get_term_score() {
 	my $sum1 =0;
 	my $sum2 =0;
 	my $sumBoth = 0;
+
 	foreach my $token (@tokens1){
+		
 	   #if it has a weight, it is at least somewhat common
 	    if (defined $weights->{$token}){
 			$sum1 += $weights->{$token}->{weight};
@@ -210,11 +213,14 @@ sub get_term_score() {
 		#//check if it is in the other company set
 		
 		if (grep {$_ eq $token } @tokens2){
+
 			if (defined $weights->{$token}){
-				$sumBoth += $weights->{$token}->{'weight'} * 2;
+
+				$sumBoth += $weights->{$token}->{weight} * 2;
 			} else {
 			    $sumBoth += $no_match_weight*2;
 			}
+
 		}
 	}
 	#// now compute weight for 2nd company
@@ -228,6 +234,8 @@ sub get_term_score() {
 
 	}
     $score = $sumBoth/($sum1+$sum2);
+    		#debug
+    		#print($comp1."  $comp2 : $sumBoth  $sum1 $sum2 = $score \n");
 	return $score;
 }
 
@@ -260,7 +268,7 @@ sub get_bigram_score() {
 		
 		if (grep {$_ eq $token } @tokens2){
 			if (defined $bi_weights->{$token}){
-				$sumBoth += $bi_weights->{$token}->{'weight'} * 2;
+				$sumBoth += $bi_weights->{$token}->{weight} * 2;
 			} else {
 			    $sumBoth += $no_match_weight*2;
 			}
@@ -299,7 +307,7 @@ sub name_subset_query() {
   foreach my $token (split(/ /,$comp1)) {
    	if (!exists $stopterms{$token}) {
    		push(@tokens1,$token);
-   	}
+   	} 
   }
     
   #if we are matching against all EDGAR names in cik lookup table
@@ -323,9 +331,9 @@ sub name_subset_query() {
    #use these quries if we are only matching aginst company_names table	  
    elsif ($match_set eq "cw_companies") {
    		$first = pop(@tokens1);
-	   $query = "select lcase(name) as name, cw_id as id,null as country_code,null as subdiv_code from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$first."%' ";
+	   $query = "select lcase(name) as name, cw_id as id,null as country_code,null as subdiv_code from company_names where name like '%".$first."%' ";
 	  foreach my $token (@tokens1){
-	    $query = $query."union distinct select lcase(name), cw_id as id,null,null from company_names where (source = 'filer_match_name' or source='relationships_clean_company') and name like '%".$token."%' ";
+	    $query = $query."union distinct select lcase(name), cw_id as id,null,null from company_names where name like '%".$token."%' ";
       }
     } 
     
