@@ -377,7 +377,7 @@ sub parse_table_by_headers {
 
 sub store_relationship {
 	my ($company, $location, $id,$tableinfo, $type, $hierarchy) = @_;
-	($company, $location) = checkResults($company, $location);
+	($company, $location, $cc, $sc) = checkResults($company, $location);
 	unless ($company && $location) { return; }
 	print "after: $company|$location|$type\n";
 	#print Data::Dumper::Dumper($tableinfo);
@@ -739,5 +739,5 @@ sub checkResults() {
 		$sth->execute($company, $location,$id);
 		return;
 	}
-	return ($company, $newlocation);	
+	return ($company, $newlocation, $cc, $sc);	
 }
