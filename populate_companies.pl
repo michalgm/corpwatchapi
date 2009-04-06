@@ -151,7 +151,7 @@ sub createRelationshipCompanies() {
 sub insertNamesAndLocations() {
 	print "inserting names and locations...\n";
 	#put those names into the names table
-	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id from relationships a join companies b on b.cw_id = a.cw_id join filings c using(filing_id) where b.source_type = 'relationships' group by b.cw_id, company_name collate 'utf8_bin'");
+	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id from relationships a join companies b on b.cw_id = a.cw_id join filings c using(filing_id) where b.source_type = 'relationships' group by b.cw_id, a.company_name collate 'utf8_bin'");
    #if the original name is differnt than the clean name, put that in. 
 	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,b.cw_id, clean_company, filing_date, 'relationships_clean_company', relationship_id from relationships a join companies b on b.cw_id = a.cw_id join filings c using(filing_id) where b.source_type = 'relationships' and a.company_name collate 'utf8_bin' != clean_company collate 'utf8_bin' group by b.cw_id, clean_company collate 'utf8_bin'");
 
