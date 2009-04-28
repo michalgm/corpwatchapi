@@ -18,18 +18,18 @@ require "common.pl";
 #The purpose of this script is to repopulate the companies_* tables using the information that has been parsed from the filings. 
 
 #reset the tables so that we can repopulate them without duplicating data
-#&cleanTables();
+&cleanTables();
 
 #insert the companies that we have info about from the SEC
 #Also merge together some of the filers
-#&insertFilers();
+&insertFilers();
 
 #check if the subsidary companies are also filers or 
-#&matchRelationships();
-#&createRelationshipCompanies();
-#&insertNamesAndLocations();
-#&insertRelationships();
-&calcTopParents()
+&matchRelationships();
+&createRelationshipCompanies();
+&insertNamesAndLocations();
+&insertRelationships();
+&calcTopParents();
 exit;
 
 #clear out the tables and preparse for receiving new data
@@ -269,18 +269,19 @@ sub calcTopParents() {
     $prev_updated = $db->do("update companies set top_parent_id = cw_id");
     $num_updated = 0;
     #repeat until the number of rows updated stops changing (indicating that we are in a loop
-    $step = 0 #track so we don't do more than 100
+    $step = 0; #track so we don't do more than 100
     while ($step < 100){
    		 $num_updated = $db->do("update companies a join company_relations b on b.target_cw_id = a.top_parent_id set top_parent_id = b.source_cw_id");
 		
+		print "$num_updated == $prev_updated\n";
 		if ($num_updated == $prev_updated){
 			last; #our work here is done
 		}
 		$prev_updated = $num_updated; 
-		$step = $step+1;
+		$step++;
 		
-  #debug
-    print (" top parents updated $num_updated companies at step $step\n");
+		#debug
+		print (" top parents updated $num_updated companies at step $step\n");
     
     }
 
