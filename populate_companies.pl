@@ -1,24 +1,41 @@
 #!/usr/bin/perl -w
 
+    # This program is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+
+    # This program is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+
+    # You should have received a copy of the GNU General Public License
+    # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 require "common.pl";
 
-#The purpose of this is to repopulate the companies_* tables using the information that has been parsed from the filings. 
+#The purpose of this script is to repopulate the companies_* tables using the information that has been parsed from the filings. 
 
-#TODO: figure out system to magically preserve ids for companies across db updates
-#reset the tables so that the ids restart from zero
+#reset the tables so that we can repopulate them without duplicating data
+#&cleanTables();
 
-&cleanTables();
-&insertFilers();
-&matchRelationships();
-&createRelationshipCompanies();
-&insertNamesAndLocations();
-&insertRelationships();
+#insert the companies that we have info about from the SEC
+#Also merge together some of the filers
+#&insertFilers();
+
+#check if the subsidary companies are also filers or 
+#&matchRelationships();
+#&createRelationshipCompanies();
+#&insertNamesAndLocations();
+#&insertRelationships();
+&calcTopParents()
 exit;
 
 #clear out the tables and preparse for receiving new data
 sub cleanTables() {
 	print "Updating cw_id_lookup...\n";
+	#store the association of names and cw_ids so that the ids can be re-matched when the table is repopulated
 	$db->do("insert ignore into cw_id_lookup (cw_id, company_name, cik) select a.cw_id, a.company_name, a.cik from companies a");
 	print "Resetting tables...\n";
 	$db->do("delete from companies");
@@ -51,8 +68,9 @@ sub insertFilers() {
 
 	#TODO: need to collapse dupes, using irs id? Or collapse some of the match_name dupes?
 
-	#put the match names of the filers in the names table
 
+	#put the match names of the filers in the names table
+	#TODO: shouldn't this grou pby both cik and match name, to deal with cases where match names has changed over the time period?
 	$db->do("insert into company_names (name_id, cw_id, name, date, source, source_row_id) select null,filers.cw_id, match_name, filing_date, 'filer_match_name', filer_id from filers join filings using (filing_id) join companies on filers.cik = companies.cik group by companies.cik"); 
 
 	#put in  the edgar "conformed" name if it is differnt from the match_name
@@ -68,6 +86,7 @@ sub insertFilers() {
 
 	print "Inserting Filer Location and SIC info...\n";
 	#/* put the biz address, mail address, and name state suffix in locations with id*/
+  #TODO: only store locations that are differnt?  When locations are the same except date, just store the oldest date?
 	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code) select null,companies.cw_id,filing_date,"business",concat_ws(", ",business_street_1, business_street_2,business_city,business_state,business_zip) raw, business_street_1, business_street_2,business_city,business_state,business_zip from filers join companies using (cik) join filings using (filing_id) where business_street_1 is not null');
 	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code) select null,companies.cw_id,filing_date,"mailing",concat_ws(", ",mail_street_1, mail_street_2,mail_city,mail_state,mail_zip) raw, mail_street_1, mail_street_2,mail_city,mail_state,mail_zip from filers join companies using (cik) join filings using (filing_id) where mail_street_1 is not null');
 
@@ -111,6 +130,7 @@ sub matchRelationships() {
 	#WARNING:  SOME MATCH AGAINST MULTIPLE NAMES, CIK CHOSEN RANDOMLY
 	$db->do("update relationships a join cik_name_lookup b on clean_company = match_name and a.cik is null set a.cik = b.cik");
 	#Fill in cw_ids for relationships from cw_id_lookup
+	#this makes sure we re-establish the same cw_id if we had previously parsed it
 	$db->do("update relationships a join cw_id_lookup b on clean_company = b.company_name and a.cik = b.cik and a.cik is not null and a.cw_id is null set a.cw_id = b.cw_id");
 	$db->do("update relationships a join cw_id_lookup b on clean_company = b.company_name and a.cik is null and b.cik is null and a.cw_id is null set a.cw_id = b.cw_id");
 }
@@ -223,8 +243,11 @@ sub insertRelationships() {
 	print "inserting relationships...\n";
 	$db->do("insert into company_relations (relation_id, source_cw_id, target_cw_id, relation_origin, origin_id) select null,parent_cw_id, cw_id, 'relationships', relationship_id from relationships where cw_id != parent_cw_id group by cw_id, parent_cw_id");
 
+
 	print "updating company meta data...\n";
+		#TODO: copy the attribute info for each company into the company info table for each year
 	# update the companies table with the counts of parents and children
+	#TODO: needs to be done for each year
 	$db->do("update companies, (select companies.cw_id,
 	 count(distinct parents.source_cw_id) num_parents ,count(distinct kids.target_cw_id) num_children 
 	from companies
@@ -234,7 +257,32 @@ sub insertRelationships() {
 	set companies.num_parents = relcount.num_parents,
 	companies.num_children = relcount.num_children
 	where companies.cw_id = relcount.cw_id");
+	
+}
 
+#pre calculate the "topmost" parent relationship for each company
+#TODO: this needs to be done independently for each year
+sub calcTopParents() {
+	
+	print "calculating topmost parent for each company\n";
+	#set the top parent of each company to itself and record number of rows updated
+    $prev_updated = $db->do("update companies set top_parent_id = cw_id");
+    $num_updated = 0;
+    #repeat until the number of rows updated stops changing (indicating that we are in a loop
+    $step = 0 #track so we don't do more than 100
+    while ($step < 100){
+   		 $num_updated = $db->do("update companies a join company_relations b on b.target_cw_id = a.top_parent_id set top_parent_id = b.source_cw_id");
+		
+		if ($num_updated == $prev_updated){
+			last; #our work here is done
+		}
+		$prev_updated = $num_updated; 
+		$step = $step+1;
+		
+  #debug
+    print (" top parents updated $num_updated companies at step $step\n");
+    
+    }
 
 }
 exit;
