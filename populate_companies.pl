@@ -18,18 +18,19 @@ require "common.pl";
 #The purpose of this script is to repopulate the companies_* tables using the information that has been parsed from the filings. 
 
 #reset the tables so that we can repopulate them without duplicating data
-&cleanTables();
+#&cleanTables();
 
 #insert the companies that we have info about from the SEC
 #Also merge together some of the filers
-&insertFilers();
+#&insertFilers();
 
 #check if the subsidary companies are also filers or 
-&matchRelationships();
-&createRelationshipCompanies();
-&insertNamesAndLocations();
-&insertRelationships();
-&calcTopParents();
+#&matchRelationships();
+#&createRelationshipCompanies();
+#&insertNamesAndLocations();
+#&insertRelationships();
+#&calcTopParents();
+&setupFilings();
 exit;
 
 #clear out the tables and preparse for receiving new data
@@ -198,6 +199,7 @@ sub insertNamesAndLocations() {
 	from company_locations ) merged group by cw_id) best) best_loc
 	set companies.best_location_id = best_loc.best_id
 	where companies.cw_id = best_loc.cw_id");
+	$db->do("update companies a join company_locations b on best_location_id = location_id join company_locations c on a.cw_id = c.cw_id set a.best_location_id = c.location_id where b.country_code is null and c.country_code is not null");
 }
 
 sub insertRelationships() {
@@ -285,6 +287,12 @@ sub calcTopParents() {
     
     }
 
+}
+
+sub setupFilings() {
+	$db->do("delete from company_filings");
+	$db->do("insert into company_filings select a.cw_id, b.filing_id, 1 from filers a join filings b using(cik) where has_sec21 = 1 group by b.filing_id, a.cw_id");
+	$db->do("insert ignore into company_filings select cw_id, filing_id, 0 from relationships where cw_id != parent_cw_id");
 }
 exit;
 
