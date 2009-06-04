@@ -1,5 +1,23 @@
 #!/usr/bin/perl -w
 
+
+    # This program is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+
+    # This program is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+
+    # You should have received a copy of the GNU General Public License
+    # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    
+ #--------------------------------------------
+ # This script is used to lookup latitude and longitude in order to geocode the UN country names and subdivision names in the database
+ #--------------------------------------------
+
 #my @cities = ('praha+13,+czech+Republic','pruhonice,+czech+Republic','Dob%C5%99ejovice+Prague+east,+Czech+Republic','Kamenice,+Prague-East,+Czech+Republic','tynec+nad+sazavou','Sob%C4%9B%C5%A1ovice,+chrastany,+Czech+Republic','neveklov','klimetice','kosova+hora','sedlcany','sedlec-prcice','Borot%C3%ADn,+T%C3%A1bor,+Czech+Republic','tabor,czech+republic','sezimovo+usti','%C5%BDele%C4%8D,+T%C3%A1bor,+Czech+Republic','Z%C3%A1l%C5%A1%C3%AD,+T%C3%A1bor,+Czech+Republic','veseli+nad+luznici','lomnice+nad+luznici','Hlubok%C3%A1+nad+Vltavou,+Budweis,+Czech+Republic','Budweis,+Budweis,+Czech+Republic','zlata+koruna','%C4%8Cesk%C3%BD+Krumlov,+%C4%8Cesk%C3%BD+Krumlov,+Czech+Republic','rozmital+na+sumave','rychnov+nad+malsi','benesov+nad+cernou','Dobr%C3%A1+Voda,+horni+Stropnice,+Czech+Republic','Nov%C3%A9+Hrady,+Budweis,+Czech+Republic','kojakovice','Doman%C3%ADn,+Jind%C5%99ich%C5%AFv+Hradec,+Czech+Republic','trebon','novosedly+nad+nezarkou','Jem%C4%8Dina,+Hat%C3%ADn,+Jind%C5%99ich%C5%AFv+Hradec,+Czech+Republic','Jind%C5%99ich%C5%AFv+Hradec,+Jind%C5%99ich%C5%AFv+Hradec,+Czech+Republic','nova+bystrice','Kl%C3%A1%C5%A1ter,+Nov%C3%A1+Byst%C5%99ice,+Jind%C5%99ich%C5%AFv+Hradec,+Czech+Republic','stare+mesto+pod+landstejnem','slavonice','pisecne','Uher%C4%8Dice,+Znojmo,+Czech+Republic','podhradi+nad+Dyji','Satov','vranov+nad+dyji','safov','chvalovice','strachotice','jaroslavice','hevlin','novy+prerov','mikulov','valtice','schrattenberg,Austria','poysdorf,Austria','Mistelbach,+Austria','ladendorf,Austria','niederkreuzstetten,Austria','Wolkersdorf+im+Weinviertel,+Austria','wien,Austria');
 #my @cities = ('wien', 'tulln', 'Krems', 'Spitz', 'melk', 'ybbs', 'grein', 'mauthausen', 'linz', 'aschach', 'schlogen', 'passau,germany' );
 #my @cities = ( 'Passau,Germany', 'Scharding', 'Obernberg am Inn,Austria', 'Braunau', 'Burghausen', 'Tittmoning', 'Oberndorf b. Salzburg', 'salzburg', 'hallein', 'Pass Lueg', 'Werfen', 'Bischofshofen', 'St.Johann im Pongau', 'Schwarzach im Pongau', 'Lend', 'Taxenbach', 'Kaprun', 'Piesendorf', 'Mittersill', 'Neukirchen am Grossvenediger', 'Krimml', 'Gerlos', 'hainzenberg', 'zell am ziller', 'erlach am ziller', 'kaltenbach', 'uderns', 'fugen', 'schlitters', 'strass im zillertal', 'sankt margarethen', 'schwaz', 'Pill', 'kolsass', 'volders', 'Hall in Tirol', 'Innsbruck', 'Hall in Tirol', 'volders', 'kolsass', 'Pill', 'schwaz', 'sankt margarethen', 'jenbach', 'fischl,tirol', 'Eben am achensee', 'Maurach', 'Buchau', 'Achensee', 'Achenkirch', 'Achenwald', 'Fall, Germany', 'hohenwiesen, germany', 'bad tolz, germany', 'Gelting Geretsried, Bad Tölz-Wolfratshausen, Bavaria, Germany', 'wolfratshausen, Germany', 'schaftlarn, germany', 'munich, germany'  );

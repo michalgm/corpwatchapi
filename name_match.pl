@@ -1,4 +1,24 @@
 #!/usr/bin/perl
+
+
+    # This program is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+
+    # This program is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+
+    # You should have received a copy of the GNU General Public License
+    # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    
+ #-------------------------------
+ # This code is used to generate match scores for sets of company names in the database. It is used to match company names associated with stock ticker codes, fortune 500 companies, and croc company names
+ #---------------------------------
+
+
 require 'common.pl';
 
 #use Text::JaroWinkler qw( strcmp95 );

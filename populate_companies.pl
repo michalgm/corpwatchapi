@@ -12,10 +12,13 @@
 
     # You should have received a copy of the GNU General Public License
     # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
+    
+#-----------------------------------   
+# The purpose of this script is to repopulate the companies_* tables using the information that has been parsed from the filings. 
+#-----------------------------------
+ 
 require "common.pl";
 
-#The purpose of this script is to repopulate the companies_* tables using the information that has been parsed from the filings. 
 
 #reset the tables so that we can repopulate them without duplicating data
 #&cleanTables();
