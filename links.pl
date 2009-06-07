@@ -1,6 +1,9 @@
 #!/usr/bin/perl 
 
-
+    # Copyright 2009 CorpWatch.org 
+    # San Francisco, CA | 94110, USA | Tel: +1-415-641-1633
+    # Developed by Greg Michalec and Skye Bender-deMoll
+    
     # This program is free software: you can redistribute it and/or modify
     # it under the terms of the GNU General Public License as published by
     # the Free Software Foundation, either version 3 of the License, or
