@@ -1,0 +1,8 @@
+0.02:
+* Initial Public Release
+* Upped response max to 5000
+* Added top_parent_id to company responses
+* All companies return their source filings
+
+0.01:
+* Testing Release
