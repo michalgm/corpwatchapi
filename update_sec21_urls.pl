@@ -20,9 +20,7 @@
 #-----------------------------------   
 # This script updates the urls for the Exhibt 21 pages in the database to convert them into a better form
 #-----------------------------------
- 
 
-chdir "/home/dameat/edgarapi/backend/";
 require "common.pl";
 
 our $db;

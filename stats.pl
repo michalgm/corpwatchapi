@@ -20,11 +20,10 @@
 #-----------------------------------   
 # This script generates some HTML giving current stats on the database in terms of the numbers of companies parsed, etc.
 #-----------------------------------
- 
 
 use CGI;
 print CGI::header();
-chdir("/home/dameat/edgarapi/backend/"); 
+chdir "/home/dameat/edgarapi/backend/"; #This should be set to the full path of this script
 require "./common.pl";
 my $db = &dbconnect();
 my @queries = ( 

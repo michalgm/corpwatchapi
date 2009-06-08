@@ -21,16 +21,14 @@
  # This code serves as a viwer for comparing the parsed subsidary results in the database to the original Exhibit 21 filing
  #-----------------------------
 
-chdir "/home/dameat/edgarapi/backend/";
-print "content-type: text/html\n\n";
-#print `pwd`;
-#exit;
 use CGI qw/:standard/;
+my $cgi = CGI->new();
+print $cgi->header();
+chdir "/home/dameat/edgarapi/backend/"; #This should be set to the full path of this script
 require "common.pl";
 
 our $db;
 our $datadir;
-my $cgi = CGI->new();
 my $action = param('action');
 
 print "<html>";

@@ -27,6 +27,7 @@ use utf8;
 use Text::Unidecode;
 
 our $datadir = "./data/";
+unless (-d $datadir) { mkdir($datadir) || die "Unable to create data directory $datadir\n"; }
 
 
 #formats company name into a standard representation so that they can be matched as text strings	
@@ -90,7 +91,7 @@ sub list_bigrams() {
 #manages the connection to the database
 sub dbconnect {
 	my $dbname = shift;
-	unless($dbname) { $dbname = 'edgarapi';}
+	unless($dbname) { $dbname = 'edgarapi_live';}
 	my $dsn = "dbi:mysql:$dbname:localhost;mysql_compression=1";
 	my $dbh;
 	while (!$dbh) {
