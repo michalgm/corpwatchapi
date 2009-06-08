@@ -5,13 +5,14 @@ June 6, 2009
 
 The CorpWatch API uses automated parsers to extract the subsidiary relationship information from Exhibit 21 of companies' 10-K filings with the SEC and provides a free, well-structured interface for programs to query and process the data.
 
+
 This file is intended to give a brief outline of the parsing processes, and quick overview of the various parsing scripts.  
 
 THIS IS OUT DATED, DESCRIBES THE PROCESS AS OF Febuary 10, 2009.  The current version of the code is set up to parse multiple years of data. 
 
 -----------------------------
 
-The backend code is written mostly in perl for speed and efficiency parsing thousands of text files.  Much of the code interacts with a MySQL database.  The final "API" facing tables are available for download, but some of the intermediate processing tables are not included.  If you would like a copy of the schema and auxiliary data tables, please contact support@api.corpwatch.org
+The backend code is written mostly in perl for speed and efficiency parsing thousands of text files.  Much of the code interacts with a MySQL database.  The final "API" facing tables are available for download, but some of the intermediate processing tables are not included.  However, the complete structure of the database is included in the file mysql_database_structure.sql. If you would like a copy of the auxillary data tables (stop terms, country name aliases, etc) , please contact support@api.corpwatch.org   These will be included in later releases of the code. 
 
 -----------------------------
 
