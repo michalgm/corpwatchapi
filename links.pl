@@ -74,8 +74,8 @@ if ($action eq 'index') {
 		my $path = $filing->[1];
 		$path =~ s/\-//g;
 		$path =~ s/.{4}$//;
-		$onclick = "javascript: parent.htmlsrc.location=\"http://idea.sec.gov/Archives/$path/$filename\"; parent.relates.location=\"links.pl?action=lookup&id=$filing->[0]\"; return false;";
-		$link = "<a onclick ='$onclick' href='http://idea.sec.gov/Archives/$path/$filename'>$filing->[5] ($filing->[4] / $filing->[0])</a><br>\n";
+		$onclick = "javascript: parent.htmlsrc.location=\"http://www.sec.gov/Archives/$path/$filename\"; parent.relates.location=\"links.pl?action=lookup&id=$filing->[0]\"; return false;";
+		$link = "<a onclick ='$onclick' href='http://www.sec.gov/Archives/$path/$filename'>$filing->[5] ($filing->[4] / $filing->[0])</a><br>\n";
 		print $link;
 	}
 } elsif ($action eq 'lookup') {

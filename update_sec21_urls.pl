@@ -39,7 +39,7 @@ our $datadir;
 		my $path = $filing->[1];
 		$path =~ s/\-//g;
 		$path =~ s/.{4}$//;
-		$filename = "http://idea.sec.gov/Archives/$path/$filename";
+		$filename = "http://www.sec.gov/Archives/$path/$filename";
 		$sth->execute($filename, $filing->[0]);
 	}
 
