@@ -96,8 +96,13 @@ foreach my $filing (@$filings) {
 					push(@cells, &check_cell($cell));
 					if (&check_cell($cell)) {
 						if ($hierarchy eq "") {
+							my ($marge, $indent);
 							if ($cell->as_HTML =~ /margin-left: ?([^;"]+);?( ?text-indent:?([^;"]+))?/i ) {
-								my ($marge, $indent) = ($1, $3);
+								($marge, $indent) = ($1, $3);
+							} elsif ($cell->as_HTML =~ /margin: ?\S+ \S+ \S+ ([^;"]+);?( ?text-indent:?([^;"]+))?/i) {
+								($marge, $indent) = ($1, $3);
+							} 
+							if ($marge) {
 								$marge =~ s/(\s|px|em|pt|in)//g;
 								$indent =~ s/(\s|px|em|pt|in)//g;
 								if ($marge + $indent && $marge != $indent && $marge > 0 && "-$marge" != $indent) { 
@@ -578,7 +583,7 @@ sub strip_junk {
 	#print "$text\n";
 	$name =~ s/\bL\.L\.C\.\b/LLC/gi;
 	$name =~ s/\bL\.P\.\b/LP/gi;
-	$text =~ s/(limited |liability |\((aquired )?inactive\)|\(unactivated\)|\((pty|dormant|non-trading|partnership|"PRC"|"BVI"|\d+)\)|\(?(in)?direct\)?|, \(?U\.?S\.?A?\.?\)?$|^\(?U\.?S\.?A?\.?\)?(-|, )|^(the )?(State|Commonwealth|^Republic|Province|Rep\.|Grand-Duchy|Federation|Kingdom) of | \([\d\/%\.,]+(-NV)?\)|\(LLC\)|^[\d\/%\.,\(\)]+(-NV)?$|[\267|\256|•|§]|^filed in |with a purpose trust charter)//gsi;
+	$text =~ s/(limited |liability |\((aquired )?inactive\)|\(unactivated\)|\((pty|dormant|non-trading|partnership|"PRC"|"BVI"|\d+)\)|\(?(in)?direct\)?|, \(?U\.?S\.?A?\.?\)?$|^\(?U\.?S\.?A?\.?\)?(-|, )|^(the )?(State|Commonwealth|^Republic|Province|Rep\.|Grand-Duchy|Federation|Kingdom) of | \([\d\/%\.,]+(-NV)?\)|\(LLC\)|^[\d\/%\.,\(\)]+(-NV)?$|[\267|\256|•|§]|^filed in |with a purpose trust charter|subsidiar(y|ies))//gsi;
 	$text =~ s/\((wholly|f\/k\/a|formerly|proprietary|previously known|contractually|see|name holder|acquired|joint venture|jv|jointly|a business|a company).*\)//ig;
 	$text =~ s/^(Managing ?Member|Wholly ?owned|(General)? ?Partner|Owner|Member|LLC|Unaffiliated ?parties|Limited|ENtity ?Name|FOrmation|N\/A|\*+)$//gsi;
 	$text =~ s/[\240|\205|\206|\225|\232|\231|\236]/ /g;
@@ -591,8 +596,8 @@ sub strip_junk {
 	$text =~ s/^(list of subsidiaries|registrant)//gi;
 	$text =~ s/(general| and its subsidiar(y|ies):?)\s*$//gi;
 	$text =~ s/[\(]?dba .*$//igs;
-	$text =~ s/^[ \d%-]+$//igs;
-	$text =~ s/[ ,]+$//;
+	$text =~ s/[ \d%-]+$//igs;
+	$text =~ s/[^A-z0-9\.\)]+$//s;
 	$text =~ s/\.\.+/\//g;
 	return $text;
 }
