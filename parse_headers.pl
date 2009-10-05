@@ -28,9 +28,20 @@ use Data::Dumper;
 use Parallel::ForkManager;
 require './common.pl';
 
-$db->do("delete from filers");
-$db->do("alter table filers auto_increment= 0");
-my $filing_id = $ARGV[0];
+my $doyear = $ARGV[0];
+my $filing_id = $ARGV[1];
+
+if ($doyear) {
+	unless ($filing_id) { 
+		$db->do("delete from filers where year = $doyear");
+	}
+	@years = ($doyear);
+} else { 
+	$db->do("delete from filers");
+	$db->do("alter table filers auto_increment= 0");
+	@years = (2003 .. 2009);
+}
+
 #my $file = "data/2008/1/68065.hdr"; 
 #my $cik = "0001156491";
 $db->disconnect;
@@ -40,7 +51,7 @@ $manager->run_on_finish(
 		my ($pid, $code, $ident) = @_; 
 		if ($code == 20) {
 			$manager->wait_all_children;
-			exit;
+			#exit;
 		}
 	}
 );
@@ -51,7 +62,7 @@ if ($filing_id) {
 } else {
 	open (LOG, '>parse_headers.log');
 }
-foreach my $year (2008) {
+foreach my $year (@years) {
 	foreach my $q (1 .. 4) {
 		my $dir = "$datadir/$year/$q/" || die("can't open $dir");
 		opendir(DIR, $dir);
@@ -61,7 +72,7 @@ foreach my $year (2008) {
 		my $set_size = int($total * .01);
 		$limit = int($total / $set_size * .01);
 		my ($x, $y) = 0;
-		print "Parsing $year Q $q\n";
+		print "\nParsing $year Q $q\n";
 		for my $set (0 .. int($total/$set_size)+1) { 
 			if ($x == $limit) { $y++; print "\r\t".($y)."%  "; $x = 0; } $x++;
 			my $pid = $manager->start and next;
@@ -87,16 +98,27 @@ foreach my $year (2008) {
 			$manager->finish($filing_id);
 			print "\n";
 		}
-		$manager->wait_all_children;
 	}
 }
 
+$manager->wait_all_children;
+print "\nUpdating filer years...\n";
+$db->do("update filers a join filings b using (filing_id) set a.year = b.year where a.year is null");
+print "\nAll DONE!";
+
 sub parse_filers() {
 	my ($file, $id) = @_;
+	#print "$file, $id";
 	my $filers;
 	my $sth = $db->prepare_cached('select cik from filings where filing_id = ?');
 	$sth->execute($id);
-	my $cik = $sth->fetchrow_arrayref()->[0];
+	my $res = $sth->fetchrow_arrayref();
+	unless ($res) { 
+		print "BaD: $id, $file\n"; 
+		return;
+	}
+
+	my $cik = $res->[0];
 	$sth->finish;
 	#print "$file - $id - $cik\n";
 	my $tree = HTML::TreeBuilder->new_from_file($file);
