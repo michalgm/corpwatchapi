@@ -33,6 +33,7 @@ print "Cleaning databases...\n";
 
 $db->do("update relationships set cik = null");
 $db->do("update cik_name_lookup set match_name = ''");
+$db->do("update relationships a join filings b using (filing_id) set a.filer_cik = b.cik, a.year = b.year, a.quarter = b.quarter");
 #if we can identify that the "company name" is definitly a location (matches with location name) then swap "company name" and "location"
 #print "\tTagging reverse country codes...\n";
 #$db->do("update relationships a join un_countries b on company_name = country_name set company_name = location, location = country_name");
@@ -40,6 +41,14 @@ $db->do("update cik_name_lookup set match_name = ''");
 #$db->do("update relationships a join un_country_aliases b on company_name = country_name set company_name = location, location = country_name");
 #print "\tTagging reverse subdivision codes...\n";
 #$db->do("update relationships a join un_country_subdivisions b on company_name = subdivision_name set company_name = location, location = subdivision_name");
+
+print "Stripping out garbage strings\n";
+my $strip_strings = $db->selectall_arrayref("select string from strip_company_strings");
+foreach my $string (@$strip_strings) {
+	$db->do("update relationships set company_name = replace(company_name, '$string->[0]', '')");
+	$db->do("update relationships set clean_company = replace(clean_company, '$string->[0]', '')");
+}
+$db->do("delete from  relationships where company_name = '' or clean_company = ''");
 
 #process the relationships and attept to tag each one with a country and subdiv  for locationscode
 #&match_relationships_locations();
