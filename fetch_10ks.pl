@@ -30,48 +30,52 @@ use LWP::UserAgent;
 use Compress::Zlib;
 $ua = LWP::UserAgent->new(keep_alive=>1);
 
-$nuke =1 ;
-my $year = 2008;
+$nuke =0 ;
+my $year;
+if ($ARGV[0]) { 
+	$year = $ARGV[0];
+}
 unless (-d "$datadir") { mkdir("$datadir") ; }
 unless (-d "$datadir$year/") { mkdir("$datadir$year/") ; }
 if ($nuke) {
 	$db->do("delete from filings");
 	$db->do("alter table filings auto_increment = 0");
 }
-my $sth = $db->prepare("insert into filings values(null, ?, ?, ?, ?, ?, 0, '$year', ?)");
+my $sth = $db->prepare("insert into filings (filing_date, type, company_name, filename, cik, has_sec21, year, quarter) values(?, ?, ?, ?, ?, 0, '$year', ?)");
 my $sth2 = $db->prepare("update filings set has_sec21 = 1 where filing_id = ?");
 #my $sth3 = $db->prepare("select filing_id from filings where year=? and quarter=? and type=? and filename=? and cik=?") || die "$!";
-my $count = 0;
 foreach my $q (1,2,3,4) { 
 #foreach my $q (2) { 
 	unless (-d "$datadir$year/$q/") { mkdir("$datadir$year/$q/") ; }
-	print "Fetching 2008 Q$q: ";
-	$res = $ua->get("ftp://ftp.sec.gov/edgar/full-index/2008/QTR".$q."/master.gz");
-	unless ($res->is_success) { die "$!"; }
+	print "Fetching $year Q$q: ";
+	$res = $ua->get("ftp://ftp.sec.gov/edgar/full-index/$year/QTR".$q."/master.gz");
+	unless ($res->is_success) { die "Unable to download SEC index for $year Q$q: $!"; }
 	my $content = Compress::Zlib::memGunzip($res->content());
 	#print $content;
 	print "done\n";
-	foreach my $line (split(/\n/, $content)) {
+	my @lines = split(/\n/, $content);
+	shift @lines;
+	foreach my $line (@lines) {
+		if ($. == 1) { next; }
 		my $id;
-		my ($cik, $name, $form, $date, $file) = split(/\|/, $line);
-		unless ($file) { next; }
-		print "\n$cik: ";
-		$count++;
-		print "$count";
-	
-		$sth->execute($date, $form, $name, $file, $cik, $q) || die $sth->errstr;
-
-		if ($count <= 754340) { 
-			$id = $count;
-			my $output = "$datadir$year/$q/$id";
-			if (-e "$output.hdr") { 
-				print "Skipping - File Exists"; 
-				$sth2->execute($id);
-			}
+		my ($cik, $name, $type, $date, $filename) = split(/\|/, $line);
+		unless ($filename && $filename ne 'Filename') { next; }
+		$sth3 = $db->prepare_cached("select filing_id from filings where year=? and filename=? and type=?");
+		#print "Testing $year $filename $type - ";
+		$sth3->execute($year, $filename, $type);
+		if ($sth3->rows()) {
+			$sth3->finish;
+			print "Already entered - skipping\n";
 			next;
 		}
+		$sth3->finish;
+		print "\n$cik: ";
+	
+		$sth->execute($date, $type, $name, $filename, $cik, $q) || die $sth->errstr;
 		$id =  $db->last_insert_id(undef, 'edgarapi', 'filings', 'filing_id');	
-		unless ($form =~ /^10-K(\/A)?/) { next; } 
+		print "$id";
+
+		unless ($type =~ /^10-K(\/A)?/) { next; } 
 		print "\tFetching $cik ($id): ";
 		my $output = "$datadir$year/$q/$id";
 		if (-e "$output.hdr") { 
@@ -79,9 +83,10 @@ foreach my $q (1,2,3,4) {
 			$sth2->execute($id);
 			next;
 		}
-		chomp($file);
-		my $res2 = $ua->get("ftp://ftp.sec.gov/$file");
-		unless ($res2->is_success) { print "Unable to fetch $file: $!"; next}
+		chomp($filename);
+		#my $res2 = $ua->get("ftp://ftp.sec.gov/$file");
+		my $res2 = $ua->get("http://idea.sec.gov/Archives/$filename");
+		unless ($res2->is_success) { print "Unable to fetch $filename: $!"; next}
 		my $filing = $res2->content();
 		my ($header, $section21);
 		if ($filing =~ /(<SEC-HEADER>.+?<\/SEC-HEADER>)/s ) { $header = $1; }
