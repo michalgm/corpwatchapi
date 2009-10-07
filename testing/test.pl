@@ -18,15 +18,33 @@ my $remotebase = 'http://api.corpwatch.org/';
 
 #	compare_new_to_old("companies/cw_444668");
 #	exit;
-my @cw_ids = fetch_cw_ids(20, 'where num_children != 0' );
-my @cw_ids = fetch_cw_ids(20);
+
+
+
+my @cw_ids = fetch_cw_ids(400, 'where num_children != 0' );
 foreach (@cw_ids) { 
+	compare_children_to_standalone($_);
+	next;
 	check_relations($_, 1);
 	check_most_recent($_);
 	compare_new_to_old("companies/$_");
 }	
 #$json = from_json($res->content());
 #print Data::Dumper::Dumper($json);
+
+sub compare_children_to_standalone() {
+	my $cw_id = shift;
+	my $company = get_company(fetch("$localbase/companies/$cw_id"));
+	my $year = ($company->{min_year} .. $company->{max_year})[rand(int($company->{min_year} .. $company->{max_year}))];
+	my $fetchchildren = fetch("$localbase/$year/companies/$cw_id/children");
+	if ($fetchchildren) {
+		my @children = values(%{fetch("$localbase/$year/companies/$cw_id/children")->{result}->{companies}});;
+		foreach my $child (@children) {
+			my $childco = get_company(fetch("$localbase/$year/companies/$child->{cw_id}"));
+			eq_or_diff($child, $childco, "child v. standalon $child->{cw_id}");
+		}
+	}
+}
 
 sub check_relations() {
 	my $cw_id = shift;
@@ -85,6 +103,10 @@ sub compare_new_to_old() {
 sub fetch() {
 	my $url = shift;
 	my $allow_empty = shift;
+	if ($url =~ /\?/) { 
+		$url .= "&";
+	} else { $url .= "?"; }
+	$url .= "key=c855af7c49b35aef8710d7450eedb56e";
 	$res = $ua->get("$url");
 	#unless ($res->is_success) { die "Unable to fetch $url: $!"; }
 	my $text = from_json(lc($res->content()));
