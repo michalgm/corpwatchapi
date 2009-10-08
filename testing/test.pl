@@ -24,10 +24,10 @@ my $remotebase = 'http://api.corpwatch.org/';
 my @cw_ids = fetch_cw_ids(400, 'where num_children != 0' );
 foreach (@cw_ids) { 
 	compare_children_to_standalone($_);
-	next;
+	#next;
 	check_relations($_, 1);
 	check_most_recent($_);
-	compare_new_to_old("companies/$_");
+	#compare_new_to_old("companies/$_");
 }	
 #$json = from_json($res->content());
 #print Data::Dumper::Dumper($json);
@@ -88,7 +88,7 @@ sub compare_new_to_old() {
 	}
 	$remote->{meta}->{parameters}->{year} = "2008";
 	$remote->{meta}->{status_string} = $local->{meta}->{status_string};
-	if (ref $remote->{result} eq 'HASH') {
+	if (ref $remote->{meta}->{total_results}) {
 		foreach my $key (keys(%{$remote->{result}->{companies}})) {
 			$remote->{result}->{companies}->{$key}->{sic_code} = $remote->{result}->{companies}->{$key}->{sic_category};
 			delete $remote->{result}->{companies}->{$key}->{sic_category};
