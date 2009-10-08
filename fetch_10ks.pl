@@ -85,7 +85,7 @@ foreach my $q (1,2,3,4) {
 		}
 		chomp($filename);
 		#my $res2 = $ua->get("ftp://ftp.sec.gov/$file");
-		my $res2 = $ua->get("http://idea.sec.gov/Archives/$filename");
+		my $res2 = $ua->get("http://www.sec.gov/Archives/$filename");
 		unless ($res2->is_success) { print "Unable to fetch $filename: $!"; next}
 		my $filing = $res2->content();
 		my ($header, $section21);
