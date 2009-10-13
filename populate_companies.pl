@@ -47,8 +47,8 @@ exit;
 
 sub cleanTables() {
 	#FIXME get rid of these - for testing only
-	$db->do("delete from companies");
-	$db->do("delete from cw_id_lookup where timestamp > '2009-09-10'");
+#	$db->do("delete from companies");
+#	$db->do("delete from cw_id_lookup where timestamp > '2009-09-10'");
 
 	print "Updating cw_id_lookup...\n";
 	#store the association of names and cw_ids so that the ids can be re-matched when the table is repopulated
@@ -58,7 +58,7 @@ sub cleanTables() {
 	$db->do("delete from companies");
 	$db->do("delete from company_info");
 	$db->do("alter table company_info auto_increment=0");
-	my $num = $db->selectrow_arrayref("select max(cast(replace(cw_id, 'cw_', '') as decimal)) + 1 from cw_id_lookup")->[0];
+	my $num = $db->selectrow_arrayref("select max(cw_id) + 1 from cw_id_lookup")->[0];
 	$db->do("alter table companies auto_increment=$num");
 	$db->do("delete from company_relations");
 	$db->do("alter table company_relations auto_increment=0");
@@ -85,8 +85,8 @@ sub insertFilers() {
 	$db->do("update filers a join cw_id_lookup b on a.cik = b.cik set a.cw_id = b.cw_id");
 	# This does nothing: $db->do("update filers a join cw_id_lookup b on company_name = match_name and a.cik is null and b.cik is null set a.cw_id = b.cw_id");
 	# ---- make company entries for each of the filers ----
-	$db->do("insert into companies (cw_id, row_id, cik, company_name, source_type, source_id) select cw_id, replace(cw_id, 'cw_', ''), cik, match_name, 'filers', filer_id from filers group by cik");
-	$db->do("update companies set cw_id = concat('cw_',row_id) where cw_id is null");
+	$db->do("insert into companies (cw_id, row_id, cik, company_name, source_type, source_id) select cw_id, cw_id, cik, match_name, 'filers', filer_id from filers group by cik");
+	$db->do("update companies set cw_id = row_id where cw_id is null");
 	#re-update cw_id_lookup to enter new cw_ids from filers we just added
 	$db->do("insert ignore into cw_id_lookup (cw_id, company_name, cik, country_code, subdiv_code, source) select a.cw_id, a.company_name, a.cik, incorp_country_code, incorp_subdiv_code, 'filers' from companies a join filers b using (cik) group by a.cw_id, a.company_name, a.cik, b.incorp_country_code, b.incorp_subdiv_code");
 	$db->do("update filers a join cw_id_lookup b on a.cik = b.cik set a.cw_id = b.cw_id");
@@ -129,7 +129,7 @@ sub matchRelationships() {
 	#this makes sure we re-establish the same cw_id if we had previously parsed it
 	$db->do("update relationships a use key (clean_company) join cw_id_lookup b on a.cik = b.cik and a.cik is not null and a.cw_id is null  and a.cik != '-1' set a.cw_id = b.cw_id");
 	#insert relationship companies that were just matched from cw_id_lookup into the companies table (if they don't already exist)
-	$db->do("insert ignore into companies (cik, row_id, company_name, source_type, source_id) select a.cik, replace(a.cw_id, 'cw_', ''), clean_company, 'relationships', relationship_id from relationships a where a.cw_id is not null group by a.cw_id");
+	$db->do("insert ignore into companies (cik, row_id, company_name, source_type, source_id) select a.cik, cw_id, clean_company, 'relationships', relationship_id from relationships a where a.cw_id is not null group by a.cw_id");
 }
 
 sub createRelationshipCompanies() {
@@ -157,7 +157,7 @@ sub createRelationshipCompanies() {
 			#Replace NULLs
 			unless ($relate->{subdiv_code}) {$relate->{subdiv_code} = ''; }
 			unless ($relate->{cik}) {$relate->{cik} = ''; }
-			$db->prepare_cached("insert into cw_id_lookup (cw_id, company_name, cik, country_code, subdiv_code, source, timestamp) value (?, ?, ?, ?, ?, 'relationships', '$date')")->execute("cw_$existing_cw_id",$relate->{clean_company}, $relate->{cik}, $relate->{country_code}, $relate->{subdiv_code}); 
+			$db->prepare_cached("insert into cw_id_lookup (cw_id, company_name, cik, country_code, subdiv_code, source, timestamp) value (?, ?, ?, ?, ?, 'relationships', '$date')")->execute("$existing_cw_id",$relate->{clean_company}, $relate->{cik}, $relate->{country_code}, $relate->{subdiv_code}); 
 		#}
 		#print "$relate->{relationship_id} : $existing_cw_id\n";
 		#$sth2->finish;
@@ -165,7 +165,7 @@ sub createRelationshipCompanies() {
 	}
 	#$db->do("insert into companies (row_id, cik, company_name, source_type, source_id) select null, cik, clean_company, 'relationships', relationship_id from relationships left join companies using (cik) where companies.cik is null group by clean_company,country_code,subdiv_code, cik");
 	#$db->do("alter table relationships add key cw_id (cw_id)");
-	$db->do("update companies set cw_id = concat('cw_',row_id) where cw_id not like 'cw_%' or cw_id is null");
+	$db->do("update companies set cw_id = row_id where cw_id is null or cw_id = ''");
 	$db->do("alter table companies enable keys");
 	$db->do("update relationships a join companies b using (cik) set a.cw_id = b.cw_id where a.cw_id is null and b.cik is not null");
 	$db->do("update relationships a use key(clean_company) join cw_id_lookup b on clean_company = b.company_name and a.country_code = b.country_code and (a.subdiv_code = b.subdiv_code or (a.subdiv_code is null and b.subdiv_code = '')) set a.cw_id = b.cw_id where a.cw_id is null and b.source = 'relationships'");
