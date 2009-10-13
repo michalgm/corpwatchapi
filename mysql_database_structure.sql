@@ -191,7 +191,7 @@ CREATE TABLE `company_info` (
   `source_id` int(11) default NULL,
   `num_parents` int(11) default NULL,
   `num_children` int(11) default NULL,
-  `top_parent_id` varchar(25) default NULL,
+  `top_parent_id` int(11) default NULL,
   `company_name` varchar(255) default NULL,
   `max_year` int(11) default NULL,
   `min_year` int(11) default NULL,
