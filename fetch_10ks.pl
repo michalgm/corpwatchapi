@@ -47,28 +47,33 @@ my $sth2 = $db->prepare("update filings set has_sec21 = 1 where filing_id = ?");
 foreach my $q (1,2,3,4) { 
 #foreach my $q (2) { 
 	unless (-d "$datadir$year/$q/") { mkdir("$datadir$year/$q/") ; }
-	print "Fetching $year Q$q: ";
+	print "\nFetching $year Q$q: ";
 	$res = $ua->get("ftp://ftp.sec.gov/edgar/full-index/$year/QTR".$q."/master.gz");
 	unless ($res->is_success) { die "Unable to download SEC index for $year Q$q: $!"; }
 	my $content = Compress::Zlib::memGunzip($res->content());
+	my $filings =$db->selectall_hashref("select concat(year,filename,type) as id from filings where year = $year and quarter = $q", 'id');
 	#print $content;
 	print "done\n";
 	my @lines = split(/\n/, $content);
 	shift @lines;
+	my $count = 0;
+	my $total = $#lines;
 	foreach my $line (@lines) {
 		if ($. == 1) { next; }
+		print "\r".int((++$count/$total)*100)."%";
 		my $id;
 		my ($cik, $name, $type, $date, $filename) = split(/\|/, $line);
 		unless ($filename && $filename ne 'Filename') { next; }
-		$sth3 = $db->prepare_cached("select filing_id from filings where year=? and filename=? and type=?");
+		#$sth3 = $db->prepare_cached("select filing_id from filings where year=? and filename=? and type=?");
 		#print "Testing $year $filename $type - ";
-		$sth3->execute($year, $filename, $type);
-		if ($sth3->rows()) {
-			$sth3->finish;
-			print "Already entered - skipping\n";
+		#$sth3->execute($year, $filename, $type);
+		if ($filings->{$year.$filename.$type}) {
+		#if ($sth3->rows()) {
+			#$sth3->finish;
+			#print "Already entered - skipping\n";
 			next;
 		}
-		$sth3->finish;
+		#$sth3->finish;
 		print "\n$cik: ";
 	
 		$sth->execute($date, $type, $name, $filename, $cik, $q) || die $sth->errstr;
@@ -78,7 +83,7 @@ foreach my $q (1,2,3,4) {
 		unless ($type =~ /^10-K(\/A)?/) { next; } 
 		print "\tFetching $cik ($id): ";
 		my $output = "$datadir$year/$q/$id";
-		if (-e "$output.hdr") { 
+		if (-e "$output.sec21") { 
 			print "Skipping - File Exists"; 
 			$sth2->execute($id);
 			next;
@@ -89,12 +94,12 @@ foreach my $q (1,2,3,4) {
 		unless ($res2->is_success) { print "Unable to fetch $filename: $!"; next}
 		my $filing = $res2->content();
 		my ($header, $section21);
-		if ($filing =~ /(<SEC-HEADER>.+?<\/SEC-HEADER>)/s ) { $header = $1; }
+		#if ($filing =~ /(<SEC-HEADER>.+?<\/SEC-HEADER>)/s ) { $header = $1; }
 		if ($filing =~ /(<DOCUMENT>\n<TYPE>EX-21.+?<\/DOCUMENT>)/s) { $section21 = $1; }
 		if ($section21) { 
-			open (HEADER, ">$output\.hdr");
-			print HEADER $header;
-			close HEADER;
+			#open (HEADER, ">$output\.hdr");
+			#print HEADER $header;
+			#close HEADER;
 			open (SEC21, ">$output\.sec21");
 			print SEC21 $section21;
 			close SEC21;
