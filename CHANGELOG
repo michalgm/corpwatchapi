@@ -1,3 +1,25 @@
+0.03:
+* Added historical data (currently 2003-2009)
+	* Added top-level year parameter
+	* Added 'year' parameter to all meta responses
+	* Added 'years' method to return years for which data is avalable
+	* Check cw_id for existence in year requested
+	* Undefined years default to 'most_recent' (See documentation)
+* Renamed 'sic_category' to 'sic_code' for consistency
+* Renamed instances of 'name' to 'company_name' for consistency
+* Corrected 'result' component so that it is always an associative array, even if empty
+* Added explicit ordering to results, based on cw_id, location, or name (depening on resultset)
+* New object properties:
+	* companies: 'min_year', 'max_year', and 'sector_name'
+	* names: 'min_year' and 'max_year'
+	* filings: 'filing_date'
+* New search parameters:
+	* /companyLocations: min_year, max_year, type
+	* /companyNames: min_year, max_year, company_name (formerly name), source
+	* /companies: min_year, max_year, source_type
+* Fixed bug in which total_results for individual company queries was always 0
+* Corrected 'result' component so that it is always an associative array, even if empty
+
 0.02:
 * Initial Public Release
 * Upped response max to 5000
