@@ -43,24 +43,23 @@ if ($ARGV[1]) {
 	$year .= " and cik = $ARGV[1] ";
 }
 print "query...";
-$sth = $db->prepare("select filing_id, filename, cik, type,year,quarter from ( select max(filing_id) as filing_id from filings where cik != 0 $year group by cik,year having group_concat(distinct type) != '4' and group_concat(distinct type) != 'REGDEX') a join filings b using(filing_id) order by filing_id");
-print "prepared...$sth\n";
-$sth->execute();
+$filings = $db->selectall_arrayref("select filing_id, filename, cik, type,year,quarter from ( select max(filing_id) as filing_id from filings where cik != 0 $year group by cik,year having group_concat(distinct type) != '4' and group_concat(distinct type) != 'REGDEX') a join filings b using(filing_id) order by filing_id");
 print "done...\n";
 my $count = 0;
-
+my $total = $#${filings};
 open(BADFILINGS, ">bad_filings.log");
 my $manager = new Parallel::ForkManager( 5 );
-	while(my $filing = $sth->fetchrow_arrayref) { 
+	foreach my $filing (@$filings) { 
 		my ($id, $file, $cik, $form, $year, $q) = @$filing;
-		print "$id\n";
+		print "\r".int((++$count/$total)*100)."%";
+		#print "$id\n";
 		unless (-d "$datadir$year/$q/") { mkdir("$datadir$year/$q/") ; }
 		my $output = "$datadir$year/$q/$id";
 		if (-f "$output.hdr") { 
 			#if ($type eq '4') { 
 			#	unlink("$output.hdr");
 			#} else {
-			print "\tSkipping $cik ($id)- File Exists\n"; 
+			#print "\tSkipping $cik ($id)- File Exists\n"; 
 			next;
 			#}
 		}
@@ -77,7 +76,7 @@ sub download_filing() {
 	my $count = shift;
 	my ($id, $file, $cik, $form, $year, $q) = @$filing;
 	if ($count && $count > 5) { 
-		print "tried $file too many times - giving up\n";
+		print "\n\ttried $file too many times - giving up\n";
 		print BADFILINGS "$id, $file, $cik, $form, $year, $q";
 		return; 
 	}
@@ -93,18 +92,18 @@ sub download_filing() {
 	my $res2 = $ua->get("$url");
 	my $header;
 	unless ($res2->is_success) { 
-		print "Unable to fetch $url: $!\n"; 
+		print "\n\tUnable to fetch $url: $!\n"; 
 	} else {
 		$header = $res2->content();
 	}
 	if (! $header || $header =~ /Sorry, there was a problem/) {
 		$count++;
-		print "refetching $url ($id) for the $count time\n";
+		print "\n\trefetching $url ($id) for the $count time\n";
 		&download_filing($filing, $count);
 	} else {
 		open (HEADER, ">$output\.hdr");
 		print HEADER $header;
 		close HEADER;
-		print "\t$cik ($id): done\n";
+		print "\n\t$cik ($id): done\n";
 	}
 }
