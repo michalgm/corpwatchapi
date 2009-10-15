@@ -5,6 +5,7 @@
 	* Added 'years' method to return years for which data is avalable
 	* Check cw_id for existence in year requested
 	* Undefined years default to 'most_recent' (See documentation)
+	* API now contains 555,948 company entities
 * Renamed 'sic_category' to 'sic_code' for consistency
 * Renamed instances of 'name' to 'company_name' for consistency
 * Corrected 'result' component so that it is always an associative array, even if empty
@@ -16,9 +17,10 @@
 * New search parameters:
 	* /companyLocations: min_year, max_year, type
 	* /companyNames: min_year, max_year, company_name (formerly name), source
-	* /companies: min_year, max_year, source_type
+	* /companies: min_year, max_year, source_type, top_parent_id
 * Fixed bug in which total_results for individual company queries was always 0
-* Corrected 'result' component so that it is always an associative array, even if empty
+* Backend parsing code modified , definition of "company" refined somewhat (See docs) , possibly resulting in deletion/addition of companies
+
 
 0.02:
 * Initial Public Release
