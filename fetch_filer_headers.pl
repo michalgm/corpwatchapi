@@ -35,53 +35,59 @@ use Parallel::ForkManager;
 use LWP::UserAgent;
 use Compress::Zlib;
 use Time::HiRes;
-my $year = "";
-if ($ARGV[0]) { 
-	$year = " and year = $ARGV[0] ";
-}
-if ($ARGV[1]) { 
-	$year .= " and cik = $ARGV[1] ";
-}
-print "query...";
-$filings = $db->selectall_arrayref("select filing_id, filename, cik, type,year,quarter from ( select max(filing_id) as filing_id from filings where cik != 0 $year group by cik,year having group_concat(distinct type) != '4' and group_concat(distinct type) != 'REGDEX') a join filings b using(filing_id) order by filing_id");
+
+my ($year, $nuke) = @ARGV;
+
+my $where = "";
+if ($year && $year ne 'all') { 
+	$where = " and year = $year ";
+} 
+my $manager = new Parallel::ForkManager( 5 );
+
+print "query...\n";
+my $filings = $db->selectall_arrayref("select b.filing_id, filename, b.cik, type,b.year,quarter from ( select max(filing_id) as filing_id from filings where cik != 0 and bad_header = 0 $where group by cik,year having group_concat(distinct type) != '4' and group_concat(distinct type) != 'REGDEX') a join filings b using(filing_id) left join filers c on b.cik= c.cik and b.year = c.year where c.filer_id is null order by filing_id") || die "unable to select filings:".$db->errstr;
 print "done...\n";
 my $count = 0;
 my $total = $#${filings};
-open(BADFILINGS, ">bad_filings.log");
-my $manager = new Parallel::ForkManager( 5 );
-	foreach my $filing (@$filings) { 
-		my ($id, $file, $cik, $form, $year, $q) = @$filing;
-		print "\r".int((++$count/$total)*100)."%";
-		#print "$id\n";
-		unless (-d "$datadir$year/$q/") { mkdir("$datadir$year/$q/") ; }
-		my $output = "$datadir$year/$q/$id";
-		if (-f "$output.hdr") { 
-			#if ($type eq '4') { 
-			#	unlink("$output.hdr");
-			#} else {
-			#print "\tSkipping $cik ($id)- File Exists\n"; 
-			next;
-			#}
-		}
-		$manager->start and next;
-		&download_filing($filing);
-		#Time::HiRes::sleep(.1);
-		$manager->finish;
+print "Checking $total filings\n";
+our $logdir; 
+open(BADFILINGS, ">$logdir/bad_filings.log");
+foreach my $filing (@$filings) { 
+	my ($id, $file, $cik, $form, $year, $q) = @$filing;
+	print "\r\t".int((++$count/$total)*100)."%";
+	#print "$id\n";
+	unless (-d "$datadir$year/$q/") { mkdir("$datadir$year/$q/") ; }
+	my $output = "$datadir$year/$q/$id";
+	if (-f "$output.hdr") { 
+		#if ($type eq '4') { 
+		#	unlink("$output.hdr");
+		#} else {
+		#print "\tSkipping $cik ($id)- File Exists\n"; 
+		next;
+		#}
 	}
-#$manager->wait_all_children;
-#print "\nDone\n";
+	$manager->start and next;
+	print ".";
+	&download_filing($filing);
+	#Time::HiRes::sleep(.1);
+	$manager->finish;
+}
+$manager->wait_all_children;
+print "\nDone\n";
 
 sub download_filing() {
 	my $filing = shift;
 	my $count = shift;
 	my ($id, $file, $cik, $form, $year, $q) = @$filing;
 	if ($count && $count > 5) { 
+		$db = &dbconnect();
+		$db->do("update filings set bad_header =1 where filing_id = $id");
 		print "\n\ttried $file too many times - giving up\n";
-		print BADFILINGS "$id, $file, $cik, $form, $year, $q";
+		print BADFILINGS "$id, $file, $cik, $form, $year, $q\n";
 		return; 
 	}
 	my $output = "$datadir$year/$q/$id";
-	print "Fetching $cik ($id):\n";
+	#print "Fetching $cik ($id):\n";
 	$file =~ /([\d-]+)\.txt/;
 	my $file_id = $1;
 	my $filing_dir = $file_id;
@@ -104,6 +110,6 @@ sub download_filing() {
 		open (HEADER, ">$output\.hdr");
 		print HEADER $header;
 		close HEADER;
-		print "\n\t$cik ($id): done\n";
+		#print "\n\t$cik ($id): done\n";
 	}
 }
