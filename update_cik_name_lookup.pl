@@ -1,0 +1,57 @@
+#!/usr/bin/perl -w
+
+    # Copyright 2009 CorpWatch.org 
+    # San Francisco, CA | 94110, USA | Tel: +1-415-641-1633
+    # Developed by Greg Michalec and Skye Bender-deMoll
+    
+    # This program is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+
+    # This program is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+
+    # You should have received a copy of the GNU General Public License
+    # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    
+#---------------------------------
+# This script is used to download a list of former and alternative names for companies and store them in the table 'cik_name_lookup'
+#--------------------------------
+
+require './common.pl';
+our $db;
+$| = 1;
+
+use LWP::UserAgent;
+use Compress::Zlib;
+$ua = LWP::UserAgent->new(keep_alive=>1);
+
+print "Deleting existing data\n";
+$db->do("delete from cik_name_lookup");
+$db->do("alter table cik_name_lookup auto_increment 0");
+$db->do("alter table cik_name_lookup disable keys");
+
+print "Fetching index from SEC...\n";
+$res = $ua->get("http://www.sec.gov/edgar/NYU/cik.coleft.c");
+unless ($res->is_success) { die "Unable to download http://www.sec.gov/edgar/NYU/cik.coleft.c: $!"; }
+my @lines = split(/\n/, $res->content); 
+my $count = 0;
+my $total = $#lines;
+
+print "inserting names\n";
+foreach my $line (@lines) {
+	print "\r".int((++$count/$total)*100)."%";
+	my ($name, $cik) = split(/:/, $line);
+	my $clean_name =  &clean_for_match($name);
+	
+	my $sth  = $db->prepare_cached("insert into  cik_name_lookup (edgar_name, cik, match_name) values (?, ?, ?)");
+	$sth->execute($name, $cik, $clean_name);
+}
+print "Re-enabling keys\n";
+$db->do("alter table cik_name_lookup enable keys");
+
+print "\nDone!\n";
+
