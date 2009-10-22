@@ -26,9 +26,16 @@ our $db = &dbconnect();
 use utf8;
 use Text::Unidecode;
 
+our @years_available = (2003 .. (localtime)[5] + 1900);
 our $datadir = "./data/";
-unless (-d $datadir) { mkdir($datadir) || die "Unable to create data directory $datadir\n"; }
+our $logdir ="./log/";
 
+unless (-d $datadir) { mkdir($datadir) || die "Unable to create data directory $datadir\n"; }
+unless (-d $logdir) { mkdir($logdir) || die "Unable to create log directory $logdir\n"; }
+
+sub get_current_year() {
+	return (localtime)[5] + 1900;
+}
 
 #formats company name into a standard representation so that they can be matched as text strings	
 sub clean_for_match() {
@@ -52,20 +59,20 @@ sub clean_for_match() {
 	$name =~ s/\s\s+/ /g;
 	$name =~ s/(^\s+|\s+$)//g;
 	$name =~ s/,//g;
-	$name =~ s/\bL\.L\.C\.\b/LLC/gi;
-	$name =~ s/\bL\.P\.\b/LP/gi;
-	$name =~ s/\b([SA])\.([AL])\.\b/$1$2/gi;
+	$name =~ s/\bL\.L\.C\.(\b|$)/LLC/gi;
+	$name =~ s/\bL\.P\.(\b|$)/LP/gi;
+	$name =~ s/\b([SA])\.([AL])\.(\b|$)/$1$2/gi;
 	$name =~ s/\b(INC|CO|JR|SR|LTD|CORP|LLC)\./$1/gi;
 	$name =~ s/( ?([\/\\]\w{0,3})?[\/\\]?)*$//;
 
-	$name =~ s/^(A|AN|THE)\b//gi;
-	$name =~ s/\bAND\b/&/gi;
-	$name =~ s/ (Incorporated|Incorporation)\b/ Inc/gi;
-	$name =~ s/ Company\b/ Co/gi;
-	$name =~ s/ Corporation\b/ Corp/gi;
-	$name =~ s/ Limited\b(?! Partnership)/ Ltd/gi;
-	$name =~ s/\bJunior\b/Jr/gi;
-	$name =~ s/\bSenior\b/Sr/gi;
+	$name =~ s/^(A|AN|THE)(\b|$)//gi;
+	$name =~ s/\bAND(\b|$)/&/gi;
+	$name =~ s/ (Incorporated|Incorporation)(\b|$)/ Inc/gi;
+	$name =~ s/ Company(\b|$)/ Co/gi;
+	$name =~ s/ Corporation(\b|$)/ Corp/gi;
+	$name =~ s/ Limited(\b|$)(?! Partnership)/ Ltd/gi;
+	$name =~ s/\bJunior(\b|$)/Jr/gi;
+	$name =~ s/\bSenior(\b|$)/Sr/gi;
 
 	$name =~ s/\s\s+/ /g;
 	$name =~ s/(^\s+|\s+$)//g;
