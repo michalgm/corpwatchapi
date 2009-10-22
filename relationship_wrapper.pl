@@ -27,31 +27,31 @@ use Parallel::ForkManager;
 require "./common.pl";
 #$| =1;
 our $db;
-$year = $ARGV[0];
-if ($year ) {
-	$where = " and year='$year' ";
-} else {
-	$year = "year"; 
-}
-my $relationship_table = 'relationships';
-open (LOG, ">log.txt");
-print "deleting tables...\n";
-$db->do("delete from filing_tables where filing_id in(select filing_id from  filings where year = $year)");
-$db->do("delete from $relationship_table  where filing_id in(select filing_id from  filings where year = $year)");
-$db->do("delete from bad_locations");
-$db->do("alter table $relationship_table auto_increment = 0");
-#$db->do("alter table $relationship_table disable keys");
-#$db->do("alter table filing_tables disable keys");
-$db->do("alter table filing_tables auto_increment = 0");
-$db->do("alter table bad_locations auto_increment = 0");
-print "done\n";
+our $logdir;
+open (LOG, ">$logdir/log.txt");
 
-my $filings = $db->selectall_arrayref("select filing_id, filename, quarter, year, cik, company_name from filings where has_sec21 = 1 and year = $year order by filing_id") || die "$!";
+my ($year, $nuke) = @ARGV;
+if ($year && $year ne 'all') {
+	$where = " and year = $year ";
+}
+if ($nuke) { 
+	print "deleting tables...\n";
+	$db->do("delete from filing_tables where filing_id in(select filing_id from  filings where has_sec21 = 1 $where)");
+	$db->do("delete from relationships  where filing_id in(select filing_id from  filings where has_sec21 = 1 $where)");
+	$db->do("update filings set bad_sec21 = 0, rows_parsed=0,num_tables=0 $where");
+	$db->do("delete from bad_locations");
+	$db->do("alter table relationships auto_increment = 0");
+	$db->do("alter table filing_tables auto_increment = 0");
+	$db->do("alter table bad_locations auto_increment = 0");
+	print "done\n";
+}
+
+my $filings = $db->selectall_arrayref("select filing_id from filings where has_sec21 = 1 $where and bad_sec21 = 0 and rows_parsed =0 and num_tables = 0 order by filing_id") || die "$!";
 
 my $manager = new Parallel::ForkManager( 5 );
 my ($x, $y) = 0;
 my $limit = int($#${filings}*.01);
-print "$#${filings} - $limit\n";
+print "Need to parse $#${filings} filings\n";
 foreach my $filing (@$filings) {
 	my $cmd = "perl sec21_headers.pl $filing->[0]";
 	print LOG "$filing->[0] started\n";
