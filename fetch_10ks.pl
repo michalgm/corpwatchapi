@@ -28,83 +28,141 @@ $| = 1;
 
 use LWP::UserAgent;
 use Compress::Zlib;
+use Time::ParseDate;
+use Date::Format; 
+use Parallel::ForkManager;
 $ua = LWP::UserAgent->new(keep_alive=>1);
+my $manager = new Parallel::ForkManager( 25 );
 
-$nuke =0 ;
-my $year;
-if ($ARGV[0]) { 
-	$year = $ARGV[0];
+$current_date = parsedate($db->selectcol_arrayref('select value from meta where meta = "update_date" limit 1')->[0]);
+
+my ($year, $nuke) = @ARGV;
+my (@years, @quarters);
+my $update = 0;
+if ($year) { 
+	if ($year eq 'all') {
+		@years = our @years_available;
+	} else {
+		@years = ($year);
+	}
+	@quarters = (1 .. 4);
+} else {
+	print "Calculating most recent quarter\n";
+	($year, $quarter) = $db->selectrow_array("select year, quarter from filings order by filing_date desc limit 1");
+	@years =($year);
+	@quarters = ($quarter .. 4);
+	$update = 1;
 }
 unless (-d "$datadir") { mkdir("$datadir") ; }
-unless (-d "$datadir$year/") { mkdir("$datadir$year/") ; }
 if ($nuke) {
-	$db->do("delete from filings");
+	print "Resetting data\n";
+	foreach my $year (@years) { 
+		$db->do("delete from filings where year = $year");
+		`rm -rf $datadir/$year/*`;
+	}
 	$db->do("alter table filings auto_increment = 0");
 }
-my $sth = $db->prepare("insert into filings (filing_date, type, company_name, filename, cik, has_sec21, year, quarter) values(?, ?, ?, ?, ?, 0, '$year', ?)");
-my $sth2 = $db->prepare("update filings set has_sec21 = 1 where filing_id = ?");
-#my $sth3 = $db->prepare("select filing_id from filings where year=? and quarter=? and type=? and filename=? and cik=?") || die "$!";
-foreach my $q (1,2,3,4) { 
-#foreach my $q (2) { 
-	unless (-d "$datadir$year/$q/") { mkdir("$datadir$year/$q/") ; }
-	print "\nFetching $year Q$q: ";
-	$res = $ua->get("ftp://ftp.sec.gov/edgar/full-index/$year/QTR".$q."/master.gz");
-	unless ($res->is_success) { die "Unable to download SEC index for $year Q$q: $!"; }
-	my $content = Compress::Zlib::memGunzip($res->content());
-	my $filings =$db->selectall_hashref("select concat(year,filename,type) as id from filings where year = $year and quarter = $q", 'id');
-	#print $content;
-	print "done\n";
-	my @lines = split(/\n/, $content);
-	shift @lines;
-	my $count = 0;
-	my $total = $#lines;
-	foreach my $line (@lines) {
-		if ($. == 1) { next; }
-		print "\r".int((++$count/$total)*100)."%";
-		my $id;
-		my ($cik, $name, $type, $date, $filename) = split(/\|/, $line);
-		unless ($filename && $filename ne 'Filename') { next; }
-		#$sth3 = $db->prepare_cached("select filing_id from filings where year=? and filename=? and type=?");
-		#print "Testing $year $filename $type - ";
-		#$sth3->execute($year, $filename, $type);
-		if ($filings->{$year.$filename.$type}) {
-		#if ($sth3->rows()) {
-			#$sth3->finish;
-			#print "Already entered - skipping\n";
-			next;
-		}
-		#$sth3->finish;
-		print "\n$cik: ";
-	
-		$sth->execute($date, $type, $name, $filename, $cik, $q) || die $sth->errstr;
-		$id =  $db->last_insert_id(undef, 'edgarapi', 'filings', 'filing_id');	
-		print "$id";
 
-		unless ($type =~ /^10-K(\/A)?/) { next; } 
-		print "\tFetching $cik ($id): ";
-		my $output = "$datadir$year/$q/$id";
-		if (-e "$output.sec21") { 
-			print "Skipping - File Exists"; 
-			$sth2->execute($id);
-			next;
+#my $sth3 = $db->prepare("select filing_id from filings where year=? and quarter=? and type=? and filename=? and cik=?") || die "$!";
+
+foreach my $year (@years) { 
+	unless (-d "$datadir$year/") { mkdir("$datadir$year/") ; }
+	foreach my $q (@quarters) { 
+		unless (-d "$datadir$year/$q/") { mkdir("$datadir$year/$q/") ; }
+		print "\nFetching $year Q$q: ";
+		$res = $ua->get("ftp://ftp.sec.gov/edgar/full-index/$year/QTR".$q."/master.gz");
+		unless ($res->is_success) { die "Unable to download SEC index for $year Q$q: $!"; }
+
+		#if we're updating, we need to keep fetching until it fails
+		if ($update && $q == 4) {
+			push(@years, $year+1);
 		}
-		chomp($filename);
-		#my $res2 = $ua->get("ftp://ftp.sec.gov/$file");
-		my $res2 = $ua->get("http://www.sec.gov/Archives/$filename");
-		unless ($res2->is_success) { print "Unable to fetch $filename: $!"; next}
-		my $filing = $res2->content();
-		my ($header, $section21);
-		#if ($filing =~ /(<SEC-HEADER>.+?<\/SEC-HEADER>)/s ) { $header = $1; }
-		if ($filing =~ /(<DOCUMENT>\n<TYPE>EX-21.+?<\/DOCUMENT>)/s) { $section21 = $1; }
-		if ($section21) { 
-			#open (HEADER, ">$output\.hdr");
-			#print HEADER $header;
-			#close HEADER;
-			open (SEC21, ">$output\.sec21");
-			print SEC21 $section21;
-			close SEC21;
-			$sth2->execute($id);
-		} else { print "(no sec21) "; }
-		print "done\n";
+
+		my $content = Compress::Zlib::memGunzip($res->content());
+		print "Caching filings already fetched\n";
+		my $filings =$db->selectall_hashref("select concat(year,filename,type) as id from filings where year = $year and quarter = $q", 'id');
+		#print $content;
+		my @lines = split(/\n/, $content);
+		shift @lines;
+		my $count = 0;
+		my $total = $#lines;
+		foreach my $line (@lines) {
+			if ($. == 1) { next; }
+			print "\r".int((++$count/$total)*100)."%";
+			my $id;
+			if ($line =~ /^Last Data Received:\s+(.+)$/) {
+				my $data_date = parsedate($1);
+				if (! $current_date || $current_date < $data_date) {
+					$date_string = time2str("%Y-%m-%d", $data_date);
+					print "\n\t**updating current date to $date_string\n";
+					$db->do("update meta set value = '$date_string' where meta = 'update_date'");
+					$db->do("update meta set value = '$current_date' where meta = 'previous_update'");
+				}
+			}
+			my ($cik, $name, $type, $date, $filename) = split(/\|/, $line);
+			unless ($filename && $filename ne 'Filename') { next; }
+			#$sth3 = $db->prepare_cached("select filing_id from filings where year=? and filename=? and type=?");
+			#print "Testing $year $filename $type - ";
+			#$sth3->execute($year, $filename, $type);
+			if ($filings->{$year.$filename.$type}) {
+			#if ($sth3->rows()) {
+				#$sth3->finish;
+				#print "Already entered - skipping\n";
+				next;
+			}
+			#$sth3->finish;
+			#print "\n$cik: ";
+			my $sth = $db->prepare_cached("insert into filings (filing_date, type, company_name, filename, cik, has_sec21, year, quarter) values(?, ?, ?, ?, ?, 0, ?, ?)");
+			$sth->execute($date, $type, $name, $filename, $cik, $year, $q) || die $sth->errstr;
+			$id =  $db->last_insert_id(undef, 'edgarapi', 'filings', 'filing_id');	
+			#print "$id";
+
+			$db->disconnect();
+			unless ($type =~ /^10-KT?(\/A)?$/) { next; } #We only want 10-K, 10-K/A, 10-KT, 10-KT/A 
+			my $pid = $manager->start and next;	
+			$db = &dbconnect();
+			#print "\tFetching $cik ($id): ";
+			my $output = "$datadir$year/$q/$id";
+			if (-e "$output.sec21") { 
+				#print "Skipping - File Exists"; 
+				next;
+			}
+			chomp($filename);
+			#my $res2 = $ua->get("ftp://ftp.sec.gov/$file");
+			my $res2 = $ua->get("http://www.sec.gov/Archives/$filename");
+			unless ($res2->is_success) { print "Unable to fetch $filename: $!"; next}
+			my $filing = $res2->content();
+			my ($header, $section21);
+			#if ($filing =~ /(<SEC-HEADER>.+?<\/SEC-HEADER>)/s ) { $header = $1; }
+			if ($filing =~ /(<DOCUMENT>\n<TYPE>EX-21.+?<\/DOCUMENT>)/s) { $section21 = $1; }
+			if ($section21) { 
+				my $sec_21_url = "";
+				if ($section21 =~ /<FILENAME>([^\n]+)\n/s) { 
+					$sec_21_url = $1;
+					my $path = $filename;
+					$path =~ s/\-//g;
+					$path =~ s/.{4}$//;
+					$sec_21_url = "http://www.sec.gov/Archives/$path/$sec_21_url";
+				}
+				#open (HEADER, ">$output\.hdr");
+				#print HEADER $header;
+				#close HEADER;
+				open (SEC21, ">$output\.sec21");
+				print SEC21 $section21;
+				close SEC21;
+				my $sth2 = $db->prepare_cached("update filings set has_sec21 = 1, sec_21_url = ? where filing_id = ?");
+				$sth2->execute($sec_21_url, $id);
+			} else { 
+				#print "(no sec21) "; 
+			}
+			#print "done\n";
+			$db->disconnect();
+			$manager->finish;
+		}
+		$manager->wait_all_children;
+	}
+	if ($update) { 
+		@quarters = (1 .. 4);
 	}
 }
+print "\n";
