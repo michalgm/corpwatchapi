@@ -1,11 +1,12 @@
 0.03:
-* Added historical data (currently 2003-2009)
+* Added ability to search historical data (currently 1/1/2003-present)
 	* Added top-level year parameter
 	* Added 'year' parameter to all meta responses
-	* Added 'years' method to return years for which data is avalable
+	* Added '/availableYears' method to return years for which data is avalable
+	* Added 'history' method to return one company object per year
 	* Check cw_id for existence in year requested
 	* Undefined years default to 'most_recent' (See documentation)
-	* API now contains 555,948 company entities
+	* API now contains 562,300 company entities
 * Renamed 'sic_category' to 'sic_code' for consistency
 * Renamed instances of 'name' to 'company_name' for consistency
 * Corrected 'result' component so that it is always an associative array, even if empty
