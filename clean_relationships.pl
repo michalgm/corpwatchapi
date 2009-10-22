@@ -25,22 +25,21 @@ require "./common.pl";
 $| = 1;
 our $db;
 $db->{mysql_enable_utf8} = 1;
+my $nuke = $ARGV[0];
 
 #my $relates = $db->selectall_arrayref('select relationship_id, company_name, location from relationships where company_name rlike "[^[:alnum:] ,\.\(\)[.hyphen.]&@\/\\%!\'\*\:\+~]"');
 print "Cleaning databases...\n";
 #blank out matching fields if they have been set
 #$db->do("update relationships set clean_company = ''");
 
-$db->do("update relationships set cik = null");
-$db->do("update cik_name_lookup set match_name = ''");
-$db->do("update relationships a join filings b using (filing_id) set a.filer_cik = b.cik, a.year = b.year, a.quarter = b.quarter");
-#if we can identify that the "company name" is definitly a location (matches with location name) then swap "company name" and "location"
-#print "\tTagging reverse country codes...\n";
-#$db->do("update relationships a join un_countries b on company_name = country_name set company_name = location, location = country_name");
-#print "\tTagging reverse country alias codes...\n";
-#$db->do("update relationships a join un_country_aliases b on company_name = country_name set company_name = location, location = country_name");
-#print "\tTagging reverse subdivision codes...\n";
-#$db->do("update relationships a join un_country_subdivisions b on company_name = subdivision_name set company_name = location, location = subdivision_name");
+#commenting out these steps for update
+if ($nuke) {
+	$db->do("update relationships set filer_cik = null, quarter = null, year = null, ");
+	$db->do("update filers set incorp_country_code = null, incorp_subdiv_code = null");
+}
+
+#Fill in filer_cik, year and quarter on relationships from the original filer
+$db->do("update relationships a join filings b using (filing_id) set a.filer_cik = b.cik, a.year = b.year, a.quarter = b.quarter where a.filer_cik is null");
 
 print "Stripping out garbage strings\n";
 my $strip_strings = $db->selectall_arrayref("select string from strip_company_strings");
@@ -53,44 +52,20 @@ $db->do("delete from  relationships where company_name = '' or clean_company = '
 #process the relationships and attept to tag each one with a country and subdiv  for locationscode
 #&match_relationships_locations();
 
-#set up prepared statments in the db to make things run faster
-my $sth = $db->prepare("update relationships set clean_company = ? where relationship_id = ?");
-my $sth2 = $db->prepare("update cik_name_lookup set match_name = ? where row_id = ?");
-my $sth3 = $db->prepare("update filers set match_name = ? where filer_id = ?");
-#my $relates = $db->selectall_arrayref('select relationship_id, company_name, location from relationships where filing_id = 44202');
-#my $relates = $db->selectall_arrayref('select relationship_id, company_name, location from relationships where company_name rlike "[^[:alnum:] ,\.\(\)[.hyphen.]&@\/\\%!\'\*\:\+~]" and relationship_id = 23818');
-
-#try to remove non-ascii characters and do some substitutions to try to put names in standard forms
-
-
-print "\nCleaning edgar names...\n";
-my $edgar_cos = $db->selectall_arrayref('select row_id, edgar_name from cik_name_lookup');
-($x, $y) = 0;
-$limit = int($#${edgar_cos}*.01);
-foreach my $edgar_co (@$edgar_cos) {
-	my ($id, $name) = @$edgar_co;
-    if ($x == $limit) { print "\r".++$y."%"; $x = 0; }
-    #substitute, strip puncucation, try to follow the SEC conform spec
-	$name = &clean_for_match($name);
-	if ($name) {
-		$sth2->execute($name, $id);
-	}
-	$x++;
-}
-
+#Insert match names on filers
 print "\nCleaning filer names...\n";
-my $filers = $db->selectall_arrayref('select filer_id, conformed_name from filers');
-($x, $y) = 0;
-$limit = int($#${filers}*.01);
+my $filers = $db->selectall_arrayref('select filer_id, conformed_name from filers where match_name is null');
+my $count = 0;
+my $total = $#${filers};
 foreach my $filer (@$filers) {
 	my ($id, $name) = @$filer;
-    if ($x == $limit) { print "\r".++$y."%"; $x = 0; }
+	print "\r".int((++$count/$total)*100)."%";
     #substitute, strip puncucation, try to follow the SEC conform spec
 	$name = &clean_for_match($name);
 	if ($name) {
-		$sth3->execute($name, $id);
+		my $sth = $db->prepare_cached("update filers set match_name = ? where filer_id = ?");
+		$sth->execute($name, $id);
 	}
-	$x++;
 }
 
 #convert the filer EDGAR state codes into un country and subdiv codes
@@ -104,7 +79,7 @@ sub match_relationships_locations() {
 	#/* a) match all that have two capital letters, and are in the table of us state codes  */
 
 	print "\tTagging US State codes\n";
-	$db->do('update relationships, un_country_subdivisions set relationships.subdiv_code = subdivision_code, relationships.country_code = "US" where location=subdivision_code and un_country_subdivisions.country_code = "US"');
+	$db->do('update relationships join un_country_subdivisions on location = subdivision_code set relationships.subdiv_code = subdivision_code, relationships.country_code = "US" where un_country_subdivisions.country_code = "US"');
 
 	#/* b) tag as DE all that contain the string "Delaware"  misses some multiply tagged locations  */
 
