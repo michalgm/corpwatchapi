@@ -37,6 +37,7 @@ require "./common.pl";
 our $db;
 open(CHARS, '>>chars.txt');
 binmode CHARS, ":utf8";
+binmode STDOUT, ":utf8";
 our $datadir;
 #my $where = " and filing_id >= 10000 ";
 #my $where = " ";
@@ -44,22 +45,15 @@ my $relationship_table = 'relationships';
 my $debug =1;
 if ($ARGV[0]) { 
 	$where = " and filing_id = $ARGV[0] ";
-} else {
-	$db->do("alter table $relationship_table auto_increment = 0");
-	$db->do("alter table filing_tables auto_increment = 0");
 }
-if ($ARGV[1]) { $debug = 1; }
-$db->do("delete from $relationship_table where filing_id is not null $where");
-$db->do("delete from filing_tables where filing_id is not null $where");
-$db->do("delete from bad_locations where filing_id is not null $where");
-my $filings = $db->selectall_arrayref("select filing_id, filename, quarter, year, cik, company_name from filings where has_sec21 = 1 $where order by filing_id") || die "$!";
+my $filings = $db->selectall_arrayref("select filing_id, filename, quarter, year, cik, company_name from filings where has_sec21 = 1 $where") || die "$!";
 unless ($filings->[0]) { die "No filings found!"; }
 
 foreach my $filing (@$filings) {
 	my $p = HTML::TableExtract->new();
 	$p->utf8_mode(1);
 	my $id = $filing->[0];
-	print "$id - $filing->[5]: ";
+	print "$filing->[3]/$filing->[2]/$id.sec21 - $filing->[5]: ";
 	open(FILE, "$datadir/$filing->[3]/$filing->[2]/$id.sec21") || die "$!";
 	my $content;
 	my $results;
@@ -69,6 +63,7 @@ foreach my $filing (@$filings) {
 	if ($content =~ /(<HTML>.+<\/HTML>)/si) { 
 		$has_html = 1;
 		my $html = $1;
+		$html =~ s/<tr([^>]*)><\/tr>/<tr\1><td><\/td><\/tr>/gsi;
 		$html =~ s/<tr[^>]*>[^<]*<tr/<tr/gsi;
 		$html =~ s/<su[pb][^>]*>[^<]*<\/su[pb]>//gsi;
 		#print $html;
@@ -86,7 +81,7 @@ foreach my $filing (@$filings) {
 			my @rows = $t->rows();
 			my @cols = $t->columns();
 			($tableinfo->{rows}, $tableinfo->{cols}) = ($#rows +1, $#cols+1);
-			print "\t Table: $#rows x $#cols";
+			print "\t Table: $#rows x $#cols\n";
 			foreach my $row (@rows) { 
 				my $hierarchy;
 				my $rowtext = '';
@@ -309,8 +304,10 @@ foreach my $filing (@$filings) {
 	} else {
 		print "Failed!\n"; 
 	}
-	my $sth2 = $db->prepare_cached("update filings set has_html=?, num_tables=?,num_rows=?,tables_parsed=?,rows_parsed=? where filing_id=?");
-	$sth2->execute($results->{has_html}, $results->{num_tables}, $results->{num_rows}, $results->{tables_parsed}, $results->{rows_parsed}, $id);
+	my $bad_sec21 = 0;
+	unless ($results->{rows_parsed}) { $bad_sec21 = 1; }
+	my $sth2 = $db->prepare_cached("update filings set has_html=?, num_tables=?,num_rows=?,tables_parsed=?,rows_parsed=?, bad_sec21=? where filing_id=?");
+	$sth2->execute($results->{has_html}, $results->{num_tables}, $results->{num_rows}, $results->{tables_parsed}, $results->{rows_parsed}, $bad_sec21, $id);
 	$p->tree->delete;
 }
 
@@ -580,9 +577,13 @@ sub search_elements {
 
 sub strip_junk {
 	my $text = shift;
-	#print "$text\n";
-	$name =~ s/\bL\.L\.C\.\b/LLC/gi;
-	$name =~ s/\bL\.P\.\b/LP/gi;
+	if ($text =~ /^\s*$/) { return; }
+	my $before = $text;
+	$text =~ s/\&nbsp;/ /gi;
+	$text =~ s/\s+$//;
+	$text =~ s/^[\s\+\*]+//;
+	$text =~ s/\bL\.L\.C\.\b/LLC/gi;
+	$text =~ s/\bL\.P\.\b/LP/gi;
 	$text =~ s/(limited |liability |\((aquired )?inactive\)|\(unactivated\)|\((pty|dormant|non-trading|partnership|"PRC"|"BVI"|\d+)\)|\(?(in)?direct\)?|, \(?U\.?S\.?A?\.?\)?$|^\(?U\.?S\.?A?\.?\)?(-|, )|^(the )?(State|Commonwealth|^Republic|Province|Rep\.|Grand-Duchy|Federation|Kingdom) of | \([\d\/%\.,]+(-NV)?\)|\(LLC\)|^[\d\/%\.,\(\)]+(-NV)?$|[\267|\256|•|§]|^filed in |with a purpose trust charter)//gsi;
 	$text =~ s/\((wholly|f\/k\/a|formerly|proprietary|previously known|contractually|see|name holder|acquired|joint venture|jv|jointly|a business|a company).*\)//ig;
 	$text =~ s/^(Managing ?Member|Wholly ?owned|(General)? ?Partner|Owner|Member|LLC|Unaffiliated ?parties|Limited|ENtity ?Name|FOrmation|N\/A|\*+)$//gsi;
@@ -595,14 +596,17 @@ sub strip_junk {
 	$text =~ s/(^|\()[\d\.]+% ((member|partner) interest )?(owned )?by.*?($|\)|,)//ig;
 	$text =~ s/(^|\()owned [\d\.]+% by .*?($|\)|,)//ig;
 	$text =~ s/holds interest in.*$//ig;
-	$text =~ s/^[\d+\.%]+[%\.] ?//ig;
+	$text =~ s/^[\d+\.%]+[%\.\)] ?//ig;
 	$text =~ s/^(list of subsidiaries|registrant)//gi;
 	$text =~ s/(general| and its subsidiar(y|ies):?)\s*$//gi;
 	#$text =~ s/subsidiar(y|ies)//gi;
-	$text =~ s/[\(]?dba .*$//igs;
-	$text =~ s/[ \d%-]+$//igs;
-	$text =~ s/[^A-z0-9\.\)]+$//s;
+	$text =~ s/[\(]?dba .*$//is;
+	$text =~ s/[ \d%-]+$//s;
+	$text =~ s/[\s\\]+$//s;
 	$text =~ s/\.\.+/\//g;
+	$text =~ s/\s+$//;
+	$text =~ s/^\s+//;
+	#print "\t$before | $text\n";
 	return $text;
 }
 
