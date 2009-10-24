@@ -95,13 +95,7 @@ sub cleanTables() {
 sub insertFilers() {
 
 	print "Hiding bogus filers\n";
-	#The following 2 queries can be undone with this: update filers a join filings b using(filing_id) set a.cik = b.cik where a.cik is null
-	#This finds filers that match to other filers on name and location, but with different ciks and sets one side to have null cik, preserving the side that has sec_21
-	$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) join filings c on a.cik = c.cik join filings d on b.cik = d.cik and a.year = c.year and b.year = d.year where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and c.has_sec21 =1  and (d.has_sec21 = 0 or a.cik > b.cik) group by a.cik, b.cik) b using (cik) set a.cik = null");
-	#This does the same as the previous, but for pairs without sec21s
-	$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and a.cik > b.cik and a.cik is not null group by a.cik, b.cik) b using (cik) set a.cik = null");
-
-
+	
 	print "Inserting Filers...\n";
 
 	# fill in cw_ids for filers from cw_id_lookup
@@ -297,6 +291,9 @@ sub insertNamesAndLocations() {
 	$db->do("alter table company_names auto_increment=0");
 	$db->do("delete from company_locations");
 	$db->do("alter table company_locations auto_increment=0");
+	$db->do("alter table company_names disable keys");
+	$db->do("alter table company_locations disable keys");
+
 	print "inserting names and locations...\n";
 		#put the match names of the filers in the names table
 	#TODO: shouldn't this grou pby both cik and match name, to deal with cases where match names has changed over the time period?
@@ -322,20 +319,22 @@ sub insertNamesAndLocations() {
 #add in locations for the state of incorporation of filers.  This query maybe not quite correct, as info was scraped, not from filings?
     $db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, country_code, subdiv_code, max_year, min_year) select null,company_info.cw_id,filing_date,"state_of_incorp",state_of_incorporation raw, incorp_country_code,incorp_subdiv_code, max(filings.year), min(filings.year)  from filers join company_info using (cik, year) join filings using (filing_id) where state_of_incorporation is not null group by company_info.cw_id, raw');
 
-	#/* fill in un country and subdiv codes o the filers where possible */
-	#TODO; this should now be done in clean relationships script
-	$db->do("update company_locations,region_codes set company_locations.country_code = region_codes.country_code, company_locations.subdiv_code = region_codes.subdiv_code where company_locations.state = region_codes.code");
-
-
 	print "\tRelatation companies\n";
 	#put those names into the names table
 	$db->do("insert into company_names (name_id, cw_id, company_name, date, source, source_row_id, country_code, subdiv_code, min_year, max_year) select null,b.cw_id, a.company_name, filing_date, 'relationships_company_name', relationship_id, country_code, subdiv_code, min(year(filing_date)), max(year(filing_date)) from relationships a join company_info b on b.cw_id = a.cw_id join filings c using(filing_id) where b.source_type = 'relationships' group by b.cw_id, a.company_name collate 'utf8_bin'");
    #if the original name is differnt than the clean name, put that in. 
 	$db->do("insert into company_names (name_id, cw_id, company_name, date, source, source_row_id, country_code, subdiv_code, min_year, max_year) select null,b.cw_id, clean_company, filing_date, 'relationships_clean_company', relationship_id, country_code, subdiv_code, min(year(filing_date)), max(year(filing_date))  from relationships a join company_info b on b.cw_id = a.cw_id join filings c using(filing_id) where b.source_type = 'relationships' and a.company_name collate 'utf8_bin' != clean_company collate 'utf8_bin' group by b.cw_id, clean_company collate 'utf8_bin'");
 
-
 	#put the relationships' locations that have been sucessfully tagged into the locations table
 	$db->do("insert into company_locations (location_id,cw_id,date,type,raw_address,country_code,subdiv_code, max_year, min_year) select null,a.cw_id,filing_date,'relation_loc',location, country_code,subdiv_code, max(filings.year), min(filings.year) from company_info a join relationships on source_type = 'relationships' and a.cw_id = relationships.cw_id and location is not null join filings using (filing_id) group by a.cw_id, subdiv_code, country_code");
+
+	$db->do("alter table company_names enable keys");
+	$db->do("alter table company_locations enable keys");
+
+	#/* fill in un country and subdiv codes o the filers where possible */
+	#TODO; this should now be done in clean relationships script
+	$db->do("update company_locations join region_codes on company_locations.state = region_codes.code set company_locations.country_code = region_codes.country_code, company_locations.subdiv_code = region_codes.subdiv_code");
+
 
 
 	# --- FIGURE OUT WHAT THE BEST (MOST COMPLETE) ADDRESS INFO IS
