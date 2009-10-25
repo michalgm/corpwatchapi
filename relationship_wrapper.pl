@@ -46,12 +46,13 @@ if ($nuke) {
 	print "done\n";
 }
 
-my $filings = $db->selectall_arrayref("select filing_id from filings where has_sec21 = 1 $where and bad_sec21 = 0 and rows_parsed =0 and num_tables = 0 order by filing_id") || die "$!";
+my $filings = $db->selectall_arrayref("select a.filing_id from filings a join filers b using(cik, year) where has_sec21 = 1 $where and bad_sec21 = 0 and rows_parsed =0 and num_tables = 0 order by a.filing_id") || die "$!";
 
 my $manager = new Parallel::ForkManager( 5 );
 my ($x, $y) = 0;
-my $limit = int($#${filings}*.01);
-print "Need to parse $#${filings} filings\n";
+my $total = $#${filings}+1;
+my $limit = int($total}*.01);
+print "Need to parse $total filings\n";
 foreach my $filing (@$filings) {
 	my $cmd = "perl sec21_headers.pl $filing->[0]";
 	print LOG "$filing->[0] started\n";

@@ -39,7 +39,7 @@ $res = $ua->get("http://www.sec.gov/edgar/NYU/cik.coleft.c");
 unless ($res->is_success) { die "Unable to download http://www.sec.gov/edgar/NYU/cik.coleft.c: $!"; }
 my @lines = split(/\n/, $res->content); 
 my $count = 0;
-my $total = $#lines;
+my $total = $#lines+1;
 
 print "inserting names\n";
 foreach my $line (@lines) {

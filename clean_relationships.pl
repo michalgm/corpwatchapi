@@ -56,7 +56,7 @@ $db->do("delete from  relationships where company_name = '' or clean_company = '
 print "\nCleaning filer names...\n";
 my $filers = $db->selectall_arrayref('select filer_id, conformed_name from filers where match_name is null');
 my $count = 0;
-my $total = $#${filers};
+my $total = $#${filers} +1;
 foreach my $filer (@$filers) {
 	my ($id, $name) = @$filer;
 	print "\r".int((++$count/$total)*100)."%";
