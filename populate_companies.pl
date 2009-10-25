@@ -82,8 +82,8 @@ sub cleanTables() {
 	$db->do("alter table company_names auto_increment=0");
 	$db->do("delete from company_locations");
 	$db->do("alter table company_locations auto_increment=0");
+	$db->do("delete from filings_lookup");
 	$db->do("delete from company_filings");
-	$db->do("alter table company_filings auto_increment=0");
 	$db->do("optimize table filings");
 	$db->do("optimize table filers");
 	$db->do("optimize table cw_id_lookup");
@@ -409,8 +409,11 @@ sub calcTopParents() {
 }
 
 sub setupFilings() {
-	$db->do("insert into company_filings select a.cw_id, b.filing_id, 1 from filers a join filings b using(cik) where type like '10-K%' group by b.filing_id, a.cw_id");
-	$db->do("insert ignore into company_filings select cw_id, filing_id, 0 from relationships where cw_id != parent_cw_id");
+	$db->do("delete from filings_lookup");
+	$db->do("delete from company_filings");
+	$db->do("insert into filings_lookup select a.cw_id, b.filing_id, 1 from filers a join filings b using(cik) where type like '10-K%' group by b.filing_id, a.cw_id");
+	$db->do("insert ignore into filings_lookup select cw_id, filing_id, 0 from relationships where cw_id != parent_cw_id");
+	$db->do("insert into company_filings select a.filing_id, a.cik, a.year, a.quarter, period_of_report, filing_date, concat('http://www.sec.gov/Archives/',filename) as form_10k_url, sec_21_url  from filings a join filings_lookup using(filing_id) group by filing_id");
 }
 exit;
 
