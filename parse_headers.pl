@@ -29,6 +29,8 @@ use Parallel::ForkManager;
 require './common.pl';
 our $db;
 $| = 1;
+our $logdir;
+open (LOG, ">$logdir/parse_headers.log");
 
 my ($year, $nuke) = @ARGV;
 $where = "";
@@ -49,12 +51,10 @@ print "Caching already_parsed...\n";
 #my $cik = "0001156491";
 $db->disconnect;
 
-our $logdir;
-open (LOG, ">$logdir/parse_headers.log");
 my $manager = new Parallel::ForkManager( 5 );
 
 foreach my $year (@years) {
-	my $already_parsed = $db->selectall_hashref("select b.filing_id from filings b where b.year = $year", 'filing_id');
+	my $already_parsed = $db->selectall_hashref("select b.filing_id from filers b where b.year = $year", 'filing_id');
 	foreach my $q (1 .. 4) {
 		my @check_headers;
 		my $dir = "$datadir/$year/$q/" || die("can't open $dir");
@@ -71,7 +71,7 @@ foreach my $year (@years) {
 			}
 			#if ($filing_id eq 'imdone') { print 'BAILING!!!!'; $manager->wait_all_children; exit; }
 		}
-		my $total = $#check_headers;
+		my $total = $#check_headers +1;
 		if ($total > 0) {
 			print "\tNeed to parse $total headers\n";
 			my $set_size = int($total * .01);
@@ -82,13 +82,15 @@ foreach my $year (@years) {
 				if ($x == $limit) { $y++; print "\r\t".($y)."%"; $x = 0; } $x++;
 				my $pid = $manager->start and next;
 				$db = &dbconnect();
-				for my $count (1 .. $set_size) {
+				for my $count (0 .. $set_size) {
 					$count += ($set * $set_size);
 					if ($count > $total) { $manager->finish; }
 					my $id = $check_headers[$count]{id};
 					my $file = $check_headers[$count]{file};
-					unless (my $filers = &parse_filers("$dir/$file", $id)) {
-						print LOG "$id didn't parse\n";
+					if ($id) {
+						unless (my $filers = &parse_filers("$dir/$file", $id)) {
+							print LOG "$id didn't parse\n";
+						}
 					}
 				}
 				$db->disconnect;
@@ -100,7 +102,13 @@ foreach my $year (@years) {
 
 
 $manager->wait_all_children;
-print "\nAll DONE!";
+print "\nHiding bad ciks...\n";
+#The following 2 queries can be undone with this: update filers a join filings b using(filing_id) set a.cik = b.cik where a.cik is null
+	#This finds filers that match to other filers on name and location, but with different ciks and sets one side to have null cik, preserving the side that has sec_21
+	$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) join filings c on a.cik = c.cik join filings d on b.cik = d.cik and a.year = c.year and b.year = d.year where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and c.has_sec21 =1  and (d.has_sec21 = 0 or a.cik > b.cik) group by a.cik, b.cik) b using (cik) set a.cik = null");
+	#This does the same as the previous, but for pairs without sec21s
+	$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and a.cik > b.cik and a.cik is not null group by a.cik, b.cik) b using (cik) set a.cik = null");
+
 
 sub parse_filers() {
 	my ($file, $id) = @_;
@@ -109,8 +117,8 @@ sub parse_filers() {
 	$sth->execute($id);
 	my $res = $sth->fetchrow_arrayref();
 	unless ($res) { 
-		print "BaD: $id, $file\n"; 
-		`rm $file`;
+		print LOG "BaD: $id, $file\n"; 
+		`rm ./$file`;
 		return;
 	}
 
@@ -121,8 +129,9 @@ sub parse_filers() {
 	my $tree = HTML::TreeBuilder->new_from_file($file);
 	unless ($tree->as_text =~ /$cik/) {
 		#If the filing doesn't have the cik in it, it's bogus - we'll delete it and get the update on the next fetch
-		$db->do("delete from filings where filing_id = $id");
-		`rm $file`;
+		print LOG "$id missing cik $cik\n";
+		$db->do("update filings set bad_header =1 where filing_id = $id");
+		`rm ./$file`;
 	}
 	my @filerdivs =  $tree->find_by_attribute('id', 'filerDiv');
 	foreach my $filerdiv (@filerdivs) {

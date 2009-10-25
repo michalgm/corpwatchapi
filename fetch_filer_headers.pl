@@ -45,16 +45,17 @@ if ($year && $year ne 'all') {
 my $manager = new Parallel::ForkManager( 5 );
 
 print "query...\n";
-my $filings = $db->selectall_arrayref("select b.filing_id, filename, b.cik, type,b.year,quarter from ( select max(filing_id) as filing_id from filings where cik != 0 and bad_header = 0 $where group by cik,year having group_concat(distinct type) != '4' and group_concat(distinct type) != 'REGDEX') a join filings b using(filing_id) left join filers c on b.cik= c.cik and b.year = c.year where c.filer_id is null order by filing_id") || die "unable to select filings:".$db->errstr;
+my $filings = $db->selectall_arrayref(" select b.filing_id, filename, b.cik, type,b.year,quarter from ( select max(filing_id) as filing_id, cik, year from filings where cik != 0 and bad_header = 0  $where group by cik,year having group_concat(distinct type) != '4' and group_concat(distinct type) != 'REGDEX') a join filings b using(filing_id, cik, year) left join filers c  on ((a.cik= c.cik and a.year = c.year)) left join filers d on a.filing_id = d.filing_id where c.filer_id is null and d.filer_id is null order by b.year, quarter") || die "unable to select filings:".$db->errstr;
 print "done...\n";
 my $count = 0;
-my $total = $#${filings};
+my $total = $#${filings}+1;
 print "Checking $total filings\n";
 our $logdir; 
-open(BADFILINGS, ">$logdir/bad_filings.log");
+open(LOG, ">>$logdir/fetch_headers.log");
+print LOG "---\nfetching headers - ".localtime()."\n---\n";
 foreach my $filing (@$filings) { 
 	my ($id, $file, $cik, $form, $year, $q) = @$filing;
-	print "\r\t".int((++$count/$total)*100)."%";
+	print "\r\t".int((++$count/$total)*100)."% ($year $q)";
 	#print "$id\n";
 	unless (-d "$datadir$year/$q/") { mkdir("$datadir$year/$q/") ; }
 	my $output = "$datadir$year/$q/$id";
@@ -78,18 +79,24 @@ print "\nDone\n";
 sub download_filing() {
 	my $filing = shift;
 	my $count = shift;
+	$count = $count ? $count : 0;
 	my ($id, $file, $cik, $form, $year, $q) = @$filing;
-	if ($count && $count > 5) { 
-		$db = &dbconnect();
-		$db->do("update filings set bad_header =1 where filing_id = $id");
-		print "\n\ttried $file too many times - giving up\n";
-		print BADFILINGS "$id, $file, $cik, $form, $year, $q\n";
-		return; 
-	}
+	#if ($count && $count > 5) { 
+	#	$db = &dbconnect();
+	#	$db->do("update filings set bad_header =1 where filing_id = $id");
+	#	print LOG "\n\ttried $file too many times - giving up\n";
+	#	print LOG "Badfiling: $id, $file, $cik, $form, $year, $q\n";
+	#	return; 
+	#}
 	my $output = "$datadir$year/$q/$id";
-	#print "Fetching $cik ($id):\n";
+	#print LOG "Fetching $cik ($id = $file):\n";
 	$file =~ /([\d-]+)\.txt/;
 	my $file_id = $1;
+	unless ($file_id) { 
+		print LOG "Filing $id has a bad file entry: ($file) - marking as bad and skipping\n";
+		$db->do("update filings set bad_header =1 where filing_id = $id");
+		return;
+	}
 	my $filing_dir = $file_id;
 	$filing_dir =~ s/-//g;
 	my $url = "http://www.sec.gov/Archives/edgar/data/$cik/$filing_dir/$file_id-index.htm";
@@ -102,9 +109,33 @@ sub download_filing() {
 	} else {
 		$header = $res2->content();
 	}
-	if (! $header || $header =~ /Sorry, there was a problem/) {
-		$count++;
-		print "\n\trefetching $url ($id) for the $count time\n";
+	my $bad_header = 0;
+	if (! $header || $header =~ /Sorry, there was a problem/ || $header =~ /ERROR 404: File not found/) { 
+		$bad_header = 1;
+	} elsif ($header !~ /$cik/) { 
+		$bad_header = 2;
+	}
+	if ($bad_header) {
+		if ($bad_header == 1) {
+			$count++;
+		}
+		if ( $count > 5 || $bad_header == 2) { 
+			$db = &dbconnect();
+			$db->do("update filings set bad_header =1 where filing_id = $id");
+			$filing = $db->selectrow_arrayref(" select b.filing_id, filename, b.cik, type,b.year,quarter from ( select max(filing_id) as filing_id, cik, year from filings where cik != 0 and bad_header = 0 and cik=$cik and year = $year group by cik,year having group_concat(distinct type) != '4' and group_concat(distinct type) != 'REGDEX') a join filings b using(filing_id, cik, year) left join filers c  on ((a.cik= c.cik and a.year = c.year)) left join filers d on a.filing_id = d.filing_id where c.filer_id is null and d.filer_id is null order by b.year, quarter");
+			if ($bad_header == 1) {
+				print LOG "\n\ttried $file too many times - giving up: ";
+				print LOG "$id, $file, $cik, $form, $year, $q\n";
+			} else {
+				print LOG "\n\t$id ($year) did not contain cik $cik\n";
+			}
+			unless ($filing) {
+				print LOG "No filings left for $cik in $year - giving up\n";
+				return;
+			}
+		} else {
+			print LOG "\n\trefetching $url ($id) for the $count time\n";
+		}
 		&download_filing($filing, $count);
 	} else {
 		open (HEADER, ">$output\.hdr");

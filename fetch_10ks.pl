@@ -39,6 +39,12 @@ $current_date = parsedate($db->selectcol_arrayref('select value from meta where 
 my ($year, $nuke) = @ARGV;
 my (@years, @quarters);
 my $update = 0;
+if ($db->selectrow_arrayref('select value from meta where meta = "update_all_years"')->[0]){
+	print "Overriding to update all years due to changed state\n";
+	$year = 'all';
+	$db->do("alter table filings auto_increment = 0");
+	$db->do("alter table filers auto_increment = 0");
+}
 if ($year) { 
 	if ($year eq 'all') {
 		@years = our @years_available;
@@ -85,7 +91,7 @@ foreach my $year (@years) {
 		my @lines = split(/\n/, $content);
 		shift @lines;
 		my $count = 0;
-		my $total = $#lines;
+		my $total = $#lines+1;
 		foreach my $line (@lines) {
 			if ($. == 1) { next; }
 			print "\r".int((++$count/$total)*100)."%";
@@ -166,3 +172,5 @@ foreach my $year (@years) {
 	}
 }
 print "\n";
+$db->do("update meta set value = 0 where meta = 'update_all_years'");
+

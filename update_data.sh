@@ -1,5 +1,6 @@
 #!/bin/sh
 
+time perl cleanup_state.pl
 time perl fetch_10ks.pl
 time perl fetch_filer_headers.pl
 time perl parse_headers.pl
