@@ -94,8 +94,6 @@ sub cleanTables() {
 #The filers are the companies that we have at least some info from the SEC about, not just 10-k filers
 sub insertFilers() {
 
-	print "Hiding bogus filers\n";
-	
 	print "Inserting Filers...\n";
 
 	# fill in cw_ids for filers from cw_id_lookup

@@ -82,7 +82,7 @@ foreach my $year (@years) {
 				if ($x == $limit) { $y++; print "\r\t".($y)."%"; $x = 0; } $x++;
 				my $pid = $manager->start and next;
 				$db = &dbconnect();
-				for my $count (0 .. $set_size) {
+				for my $count (0 .. $set_size-1) {
 					$count += ($set * $set_size);
 					if ($count > $total) { $manager->finish; }
 					my $id = $check_headers[$count]{id};

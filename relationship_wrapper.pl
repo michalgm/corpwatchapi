@@ -51,7 +51,7 @@ my $filings = $db->selectall_arrayref("select a.filing_id from filings a join fi
 my $manager = new Parallel::ForkManager( 5 );
 my ($x, $y) = 0;
 my $total = $#${filings}+1;
-my $limit = int($total}*.01);
+my $limit = (int($total)*.01);
 print "Need to parse $total filings\n";
 foreach my $filing (@$filings) {
 	my $cmd = "perl sec21_headers.pl $filing->[0]";

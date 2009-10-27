@@ -54,7 +54,7 @@ if ($year) {
 	@quarters = (1 .. 4);
 } else {
 	print "Calculating most recent quarter\n";
-	($year, $quarter) = $db->selectrow_array("select year, quarter from filings order by filing_date desc limit 1");
+	($year, $quarter) = $db->selectrow_array("select year, quarter from filings order by year desc, quarter desc limit 1");
 	@years =($year);
 	@quarters = ($quarter .. 4);
 	$update = 1;
