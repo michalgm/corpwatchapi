@@ -27,6 +27,7 @@ $| = 1;
 
 use LWP::UserAgent;
 use Compress::Zlib;
+use Parallel::ForkManager;
 $ua = LWP::UserAgent->new(keep_alive=>1);
 
 print "Deleting existing data\n";
@@ -39,17 +40,34 @@ $res = $ua->get("http://www.sec.gov/edgar/NYU/cik.coleft.c");
 unless ($res->is_success) { die "Unable to download http://www.sec.gov/edgar/NYU/cik.coleft.c: $!"; }
 my @lines = split(/\n/, $res->content); 
 my $count = 0;
-my $total = $#lines+1;
+my $total = $#lines;
+my $set_size = int($total * .01);
+$limit = int($total / $set_size * .01);
+my $manager = new Parallel::ForkManager( 5 );
+my ($x, $y) = 0;
 
+$db->disconnect;
 print "inserting names\n";
-foreach my $line (@lines) {
-	print "\r".int((++$count/$total)*100)."%";
-	my ($name, $cik) = split(/:/, $line);
-	my $clean_name =  &clean_for_match($name);
-	
-	my $sth  = $db->prepare_cached("insert into  cik_name_lookup (edgar_name, cik, match_name) values (?, ?, ?)");
-	$sth->execute($name, $cik, $clean_name);
+for my $set (0 .. int($total/$set_size)+1) { 
+	#print "\r".int((++$count/$total)*100)."%";
+	if ($x == $limit) { $y++; print "\r".($y)."%"; $x = 0; } $x++;
+	$manager->start and next;
+	$db = &dbconnect();
+	for my $count (0 .. $set_size-1) {
+		$count += ($set * $set_size);
+		if ($count > $total) { $manager->finish; }
+		if ($lines[$count]) {
+			my ($name, $cik) = split(/:/, $lines[$count]);
+			my $clean_name =  &clean_for_match($name);
+			
+			my $sth  = $db->prepare_cached("insert into  cik_name_lookup (edgar_name, cik, match_name) values (?, ?, ?)");
+			$sth->execute($name, $cik, $clean_name);
+		}
+	}
+	$db->disconnect;
+	$manager->finish();
 }
+$manager->wait_all_children;
 print "Re-enabling keys\n";
 $db->do("alter table cik_name_lookup enable keys");
 
