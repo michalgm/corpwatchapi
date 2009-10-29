@@ -54,7 +54,7 @@ $db->disconnect;
 my $manager = new Parallel::ForkManager( 5 );
 
 foreach my $year (@years) {
-	my $already_parsed = $db->selectall_hashref("select b.filing_id from filers b where b.year = $year", 'filing_id');
+	my $already_parsed = $db->selectall_hashref("select b.filing_id from filers b where b.year = $year and cik is not null", 'filing_id');
 	foreach my $q (1 .. 4) {
 		my @check_headers;
 		my $dir = "$datadir/$year/$q/" || die("can't open $dir");
