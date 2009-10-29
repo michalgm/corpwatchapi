@@ -113,7 +113,7 @@ sub insertFilers() {
 #this section processes the companies that we have scraped out of the filer's section 21 filings, in many cases we don't have SEC info
 sub matchRelationships() {
 	#$db->do("update relationships a join cw_id_lookup b on a.cik = b.cik and a.cik is not null and a.cw_id is null set a.cw_id = b.cw_id");
-	$db->do("update relationships a join cw_id_lookup b on clean_company = b.company_name and (a.subdiv_code = b.subdiv_code or (a.subdiv_code is null and b.subdiv_code = '')) and (a.country_code = b.country_code or a.country_code is null and b.country_code = '') and a.cik is null and b.cik = '' and a.cw_id is null and b.country_code != '' set a.cw_id = b.cw_id");
+	$db->do("update relationships a join cw_id_lookup b on clean_company = b.company_name and (a.subdiv_code = b.subdiv_code or (a.subdiv_code is null and b.subdiv_code = '')) and (a.country_code = b.country_code or a.country_code is null and b.country_code = '') and a.cik is null and b.cik = 0 and a.cw_id is null and b.country_code != '' set a.cw_id = b.cw_id");
 	#----- create companies for the relationship companies -------
 	#try to assign CIKs to relationship companies
 	#WARNING: SOME NAMES HAVE MULTIPLE CIKs, and some CIKs have multiple names
@@ -377,7 +377,8 @@ sub insertNamesAndLocations() {
 	#Update cw_id_lookup with all names and locations
 	$db->do("insert ignore into cw_id_lookup (cw_id, company_name, cik, country_code, subdiv_code, source) select a.cw_id, b.company_name, a.cik, c.country_code, c.subdiv_code, 'alt names/locations' from companies a join company_names b using (cw_id) join company_locations c using (cw_id) where (b.source = 'cik_former_name' or b.source = 'filer_match_name' or b.source = 'relationships_clean_company') group by a.cw_id, b.company_name, a.cik, c.country_code, c.subdiv_code");
 
-
+	$db->do("update cw_id_lookup b set b.orphaned = 0 where b.orphaned != 0");
+	$db->do("update cw_id_lookup b left join companies a using(cw_id) set b.orphaned = 1 where a.row_id is null");
 }
 
 
@@ -404,6 +405,10 @@ sub calcTopParents() {
     
     }
 
+	#Override any interlocking top-parent relationships to use one companies cw_id as both's top parent (and do the same for the children)
+	$db->do("update company_info a join company_info b on a.top_parent_id = b.cw_id and b.top_parent_id = a.cw_id and a.cw_id > b.cw_id and a.year = b.year join company_info c on c.top_parent_id = b.cw_id and c.year = b.year set a.top_parent_id = a.cw_id, c.top_parent_id = a.cw_id");
+	#Remove the child relationship of any company list as top_parent
+	$db->do("delete from company_relations b using company_info a join company_relations b on a.top_parent_id = b.target_cw_id and a.year = b.year");
 }
 
 sub setupFilings() {
