@@ -179,14 +179,16 @@ sub parse_filers() {
 					}
 					if ($citystate) {
 						@codes = ($citystate->as_trimmed_text =~ /\b[a-z0-9]{2}\b/gi);
-						foreach my $code (@codes) {
+						foreach my $code (reverse(@codes)) {
 							if ($region_codes->{uc($code)}) {
 								$values->{"$type\_state"} = uc($code);
 								last;
 							}
 						}
 						if ($values->{"$type\_state"}) {
-							($values->{"$type\_city"}, $values->{"$type\_zip"}) = map {&trim($_);} split(/$values->{"$type\_state"}/, $citystate->as_trimmed_text);
+							$state = $values->{"$type\_state"};
+							$citystate->as_trimmed_text =~ /(^.*)?\b$state\b(.*$)?/i;
+							($values->{"$type\_city"}, $values->{"$type\_zip"}) = (&trim($1), &trim($2));
 						}
 
 						#if ($citystate->as_trimmed_text =~ /^((.+?) )?(\S+) ([\S]+)$/) {
@@ -249,8 +251,9 @@ sub parse_filers() {
 }
 
 sub trim() {
-	$_ =~ s/^\s+//;
-	$_ =~ s/\s+$//;
-	return $_;
+	$x = shift;
+	$x =~ s/^\s+//;
+	$x =~ s/\s+$//;
+	return $x;
 }
 
