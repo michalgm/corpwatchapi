@@ -56,8 +56,7 @@ print "Need to parse $total filings\n";
 foreach my $filing (@$filings) {
 	my $cmd = "perl sec21_headers.pl $filing->[0]";
 	print LOG "$filing->[0] started\n";
-    if ($x == $limit) { print "\r".++$y."%"; $x = 0; }
-	print ".";
+    if ($x >= $limit) { print "\r".++$y."%"; $x = 0; }
 	$x++;
 
 	$manager->start and next;

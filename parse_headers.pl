@@ -33,27 +33,41 @@ our $logdir;
 open (LOG, ">$logdir/parse_headers.log");
 
 my ($year, $nuke) = @ARGV;
+my $header_file;
+my $debug = 0;
 $where = "";
-if ($year) {
-	$where = " and year = $year ";
-	@years = ($year);
-} else {
+if (!$year || $year eq 'all') {
 	@years = our @years_available;
+} else {
+	if ($year =~ /^\d\d\d\d$/) {
+		$where = " and year = $year ";
+		@years = ($year);
+	} else {
+		$header_file = $year;
+		$debug = 1;
+		#FIXME - should probably deltete existing records for this filing
+	}
 }
 
-print "Resetting...\n";
 if ($nuke) {
+	print "Resetting...\n";
 	$db->do("delete from filers where filer_id = filer_id $where");
 	$db->do("alter table filers auto_increment= 0");
 }
-print "Caching already_parsed...\n";
 #my $file = "data/2008/1/68065.hdr"; 
 #my $cik = "0001156491";
-$db->disconnect;
-
+my $region_codes = $db->selectall_hashref("select code from region_codes", 'code');
 my $manager = new Parallel::ForkManager( 5 );
+if ($header_file) {	
+	$header_file =~ /(\d+)\.hdr$/;
+	$id = $1;
+	&parse_filers($header_file, $id);
+} else {
+	$db->disconnect;
+}
 
 foreach my $year (@years) {
+	print "Caching already_parsed...\n";
 	my $already_parsed = $db->selectall_hashref("select b.filing_id from filers b where b.year = $year and cik is not null", 'filing_id');
 	foreach my $q (1 .. 4) {
 		my @check_headers;
@@ -100,15 +114,15 @@ foreach my $year (@years) {
 	}
 }
 
-
-$manager->wait_all_children;
-print "\nHiding bad ciks...\n";
-#The following 2 queries can be undone with this: update filers a join filings b using(filing_id) set a.cik = b.cik where a.cik is null
-	#This finds filers that match to other filers on name and location, but with different ciks and sets one side to have null cik, preserving the side that has sec_21
-	$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) join filings c on a.cik = c.cik join filings d on b.cik = d.cik and a.year = c.year and b.year = d.year where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and c.has_sec21 =1  and (d.has_sec21 = 0 or a.cik > b.cik) group by a.cik, b.cik) b using (cik) set a.cik = null");
-	#This does the same as the previous, but for pairs without sec21s
-	$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and a.cik > b.cik and a.cik is not null group by a.cik, b.cik) b using (cik) set a.cik = null");
-
+unless ($header_file) {
+	$manager->wait_all_children;
+	print "\nHiding bad ciks...\n";
+	#The following 2 queries can be undone with this: update filers a join filings b using(filing_id) set a.cik = b.cik where a.cik is null
+		#This finds filers that match to other filers on name and location, but with different ciks and sets one side to have null cik, preserving the side that has sec_21
+		$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) join filings c on a.cik = c.cik join filings d on b.cik = d.cik and a.year = c.year and b.year = d.year where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and c.has_sec21 =1  and (d.has_sec21 = 0 or a.cik > b.cik) group by a.cik, b.cik) b using (cik) set a.cik = null");
+		#This does the same as the previous, but for pairs without sec21s
+		$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and a.cik > b.cik and a.cik is not null group by a.cik, b.cik) b using (cik) set a.cik = null");
+}
 
 sub parse_filers() {
 	my ($file, $id) = @_;
@@ -139,13 +153,17 @@ sub parse_filers() {
 			#This is not the div you're looking for
 			next; 
 		}
-	#	print "##\n\n".$filerdiv->as_HTML."\n";
+		#print "##\n\n".$filerdiv->as_HTML."\n";
 		my $values = {'filing_id'=>$id, 'cik'=>$cik, 'year'=>$year};
 		my @results;
 		foreach my $address ($filerdiv->find_by_attribute('class', 'mailer')) {
 			$type = $address->as_text =~ /^Business/ ? 'business' : 'mail';
 			my @address_parts = $address->find('span');
 			@address_parts = grep { $_->as_trimmed_text ne 'NULL' } @address_parts;
+			$rawaddress = join(', ', map {$_->as_trimmed_text} @address_parts);
+			$rawaddress =~ s/(, |^)([^a-df-su-wyz]+)$//i;
+			$values->{"$type\_raw_address"} = $rawaddress;
+			if($debug) { print "$rawaddress\n"; }
 			if (my $phone = $address_parts[$#address_parts]) {
 				if ($phone->as_trimmed_text =~ /^([^a-df-su-wyz]+)$/i) {
 					$values->{"$type\_phone"} = $1;
@@ -153,16 +171,31 @@ sub parse_filers() {
 				}
 				my $line1 = shift @address_parts;
 				if ($line1) { 
-					$values->{"$type\_street_1"} = $line1->as_text;
 					my $citystate = pop(@address_parts);
 					if ($citystate) {
-						if ($citystate->as_trimmed_text =~ /^((.+?) )?(\S+) ([\S]+)$/) {
-							($values->{"$type\_city"}, $values->{"$type\_state"},$values->{"$type\_zip"}) = ($2, $3, $4);
-						} else {
-							$values->{"$type\_state"} = $citystate->as_trimmed_text;
+						$values->{"$type\_street_1"} = $line1->as_trimmed_text;
+					} else {
+						$citystate = $line1;
+					}
+					if ($citystate) {
+						@codes = ($citystate->as_trimmed_text =~ /\b[a-z0-9]{2}\b/gi);
+						foreach my $code (@codes) {
+							if ($region_codes->{uc($code)}) {
+								$values->{"$type\_state"} = uc($code);
+								last;
+							}
 						}
+						if ($values->{"$type\_state"}) {
+							($values->{"$type\_city"}, $values->{"$type\_zip"}) = map {&trim($_);} split(/$values->{"$type\_state"}/, $citystate->as_trimmed_text);
+						}
+
+						#if ($citystate->as_trimmed_text =~ /^((.+?) )?(\S+) ([\S]+)$/) {
+						#	($values->{"$type\_city"}, $values->{"$type\_state"},$values->{"$type\_zip"}) = ($2, $3, $4);
+						#} else {
+						#	$values->{"$type\_state"} = $citystate->as_trimmed_text;
+						#}
 						if (my $line2 = shift @address_parts ) { 
-							$values->{"$type\_street_2"} = $line2->as_text;
+							$values->{"$type\_street_2"} = $line2->as_trimmed_text;
 						}	
 						if ($values->{"$type\_street_2"} && ! $values->{"$type\_city"}) {
 							$values->{"$type\_city"} = $values->{"$type\_street_2"};
@@ -171,6 +204,7 @@ sub parse_filers() {
 					}
 				}
 			}
+			#print Data::Dumper::Dumper($values);
 			foreach my $part (@address_parts) {
 				print LOG "$id extra parts: ".$part->as_text."\n";
 				print LOG Data::Dumper::Dumper($values);
@@ -202,9 +236,9 @@ sub parse_filers() {
 		}
 		
 		push(@$filers, $values);
-		my $sth2 = $db->prepare_cached("insert into filers (filer_id, filing_id, cik, irs_number, conformed_name, fiscal_year_end, sic_code, business_street_1, business_street_2, business_city, business_state, business_zip, mail_street_1, mail_street_2, mail_city, mail_state, mail_zip, business_phone, state_of_incorporation, year) values (NULL ". ", ?" x 19 .")") || die "$!";
+		my $sth2 = $db->prepare_cached("insert into filers (filer_id, filing_id, cik, irs_number, conformed_name, fiscal_year_end, sic_code, business_street_1, business_street_2, business_city, business_state, business_zip, mail_street_1, mail_street_2, mail_city, mail_state, mail_zip, business_phone, state_of_incorporation, year, mail_raw_address, business_raw_address) values (NULL ". ", ?" x 21 .")") || die "$!";
 
-		foreach my $key ('filing_id', 'cik', 'irs_number', 'conformed_name', 'fiscal_year_end', 'sic_code', 'business_street_1', 'business_street_2', 'business_city', 'business_state', 'business_zip', 'mail_street_1', 'mail_street_2', 'mail_city', 'mail_state', 'mail_zip', 'business_phone', 'state_of_incorporation', 'year') {
+		foreach my $key ('filing_id', 'cik', 'irs_number', 'conformed_name', 'fiscal_year_end', 'sic_code', 'business_street_1', 'business_street_2', 'business_city', 'business_state', 'business_zip', 'mail_street_1', 'mail_street_2', 'mail_city', 'mail_state', 'mail_zip', 'business_phone', 'state_of_incorporation', 'year', 'mail_raw_address', 'business_raw_address') {
 			push (@results, $values->{$key}) ;
 		}
 		$sth2->execute(@results);
@@ -212,5 +246,11 @@ sub parse_filers() {
 	}
 	$tree->delete();
 	return $filers;
+}
+
+sub trim() {
+	$_ =~ s/^\s+//;
+	$_ =~ s/\s+$//;
+	return $_;
 }
 
