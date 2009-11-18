@@ -9,6 +9,7 @@
 	* API now contains 562,300 company entities
 * Renamed 'sic_category' to 'sic_code' for consistency
 * Renamed instances of 'name' to 'company_name' for consistency
+* Default behavior of company_name search altered to use faster fultext index. Original substring matching behavior is availible with the 'substring_match=1' flag (but it is 10X slower)	
 * Corrected 'result' component so that it is always an associative array, even if empty
 * Added explicit ordering to results, based on cw_id, location, or name (depening on resultset)
 * New object properties:
