@@ -57,8 +57,8 @@ exit;
 
 sub cleanTables() {
 	#FIXME get rid of these - for testing only
-	#$db->do("delete from companies");
-	#$db->do("delete from cw_id_lookup where timestamp > '2009-07-10'");
+	$db->do("delete from companies");
+	$db->do("delete from cw_id_lookup where timestamp > '2009-07-10'");
 
 	print "Updating cw_id_lookup...\n";
 	#store the association of names and cw_ids so that the ids can be re-matched when the table is repopulated
@@ -311,8 +311,8 @@ sub insertNamesAndLocations() {
 	print "Inserting Filer Location and SIC info...\n";
 	#/* put the biz address, mail address, and name state suffix in locations with id*/
   #TODO: only store locations that are differnt?  When locations are the same except date, just store the oldest date?
-	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code, max_year, min_year) select null,company_info.cw_id,filing_date,"business",business_raw_address raw, business_street_1, business_street_2,business_city,business_state,business_zip, max(filings.year), min(filings.year) from filers force key(business_street) join company_info using (cw_id, year) join filings using (filing_id) where business_street_1 is not null group by company_info.cw_id, business_raw_address');
-	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code, max_year, min_year) select null,company_info.cw_id,filing_date,"mailing",mail_raw_address raw, mail_street_1, mail_street_2,mail_city,mail_state,mail_zip, max(filings.year), min(filings.year)  from filers force key (mail_street) join company_info using (cw_id, year) join filings using (filing_id) where mail_street_1 is not null group by company_info.cw_id, mail_raw_address');
+	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code, max_year, min_year) select null,company_info.cw_id,filing_date,"business",business_raw_address raw, business_street_1, business_street_2,business_city,business_state,business_zip, max(filings.year), min(filings.year) from filers join company_info using (cw_id, year) join filings using (filing_id) where business_street_1 is not null group by company_info.cw_id, business_raw_address');
+	$db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, street_1, street_2, city, state, postal_code, max_year, min_year) select null,company_info.cw_id,filing_date,"mailing",mail_raw_address raw, mail_street_1, mail_street_2,mail_city,mail_state,mail_zip, max(filings.year), min(filings.year)  from filers join company_info using (cw_id, year) join filings using (filing_id) where mail_street_1 is not null group by company_info.cw_id, mail_raw_address');
 
 #add in locations for the state of incorporation of filers.  This query maybe not quite correct, as info was scraped, not from filings?
     $db->do('insert into company_locations (location_id, cw_id, date, type, raw_address, country_code, subdiv_code, max_year, min_year) select null,company_info.cw_id,filing_date,"state_of_incorp",state_of_incorporation raw, incorp_country_code,incorp_subdiv_code, max(filings.year), min(filings.year)  from filers join company_info using (cik, year) join filings using (filing_id) where state_of_incorporation is not null group by company_info.cw_id, raw');

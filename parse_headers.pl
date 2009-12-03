@@ -68,7 +68,7 @@ if ($header_file) {
 
 foreach my $year (@years) {
 	print "Caching already_parsed...\n";
-	my $already_parsed = $db->selectall_hashref("select b.filing_id from filers b where b.year = $year and cik is not null", 'filing_id');
+	my $already_parsed = $db->selectall_hashref("select b.filing_id from filers b where b.year = $year and (cik is not null or bad_cik != 0)", 'filing_id');
 	foreach my $q (1 .. 4) {
 		my @check_headers;
 		my $dir = "$datadir/$year/$q/" || die("can't open $dir");
@@ -116,12 +116,37 @@ foreach my $year (@years) {
 
 unless ($header_file) {
 	$manager->wait_all_children;
+	print "\nCleaning filer names...\n";
+	my $filers = $db->selectall_arrayref('select filer_id, conformed_name from filers where match_name is null');
+	my $count = 0;
+	my $total = $#${filers} +1;
+	foreach my $filer (@$filers) {
+		my ($id, $name) = @$filer;
+		print "\r".int((++$count/$total)*100)."%";
+		#substitute, strip puncucation, try to follow the SEC conform spec
+		$name = &clean_for_match($name);
+		if ($name) {
+			my $sth = $db->prepare_cached("update filers set match_name = ? where filer_id = ?");
+			$sth->execute($name, $id);
+		}
+	}
+
+	#convert the filer EDGAR state codes into un country and subdiv codes
+	print "\nConverting Filer state of incorporation codes to un codes\n";
+	$db->do("update filers join region_codes on state_of_incorporation = code  set incorp_country_code = country_code, incorp_subdiv_code = subdiv_code where state_of_incorporation is not null");
+
+
 	print "\nHiding bad ciks...\n";
-	#The following 2 queries can be undone with this: update filers a join filings b using(filing_id) set a.cik = b.cik where a.cik is null
-		#This finds filers that match to other filers on name and location, but with different ciks and sets one side to have null cik, preserving the side that has sec_21
-		$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) join filings c on a.cik = c.cik join filings d on b.cik = d.cik and a.year = c.year and b.year = d.year where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and c.has_sec21 =1  and (d.has_sec21 = 0 or a.cik > b.cik) group by a.cik, b.cik) b using (cik) set a.cik = null");
+		#The following 2 queries can be undone with this: update filers a join filings b using(filing_id) set a.cik = b.cik where a.cik is null
+		#$db->do("update filers a join filings b using(filing_id) set a.cik = b.cik where a.cik is null");
+		#This finds filers that match to other filers on name and location, but with different ciks and sets one side to have null cik, preserving the side that has sec_21 and a lower cw_id
+		$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) join filings c on a.filing_id = c.filing_id join filings d on b.filing_id = d.filing_id join cw_id_lookup e on a.cik = e.cik left join cw_id_lookup f on b.cik = f.cik where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and c.has_sec21 =1  and (e.cw_id < f.cw_id or f.cw_id is null ) group by a.cik, b.cik) b using (cik) set a.cik = null, a.bad_cik=1");
 		#This does the same as the previous, but for pairs without sec21s
-		$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and a.cik > b.cik and a.cik is not null group by a.cik, b.cik) b using (cik) set a.cik = null");
+		$db->do("update filers a join (select b.cik from filers a join filers b  using (match_name) join cw_id_lookup e on a.cik = e.cik left join cw_id_lookup f on b.cik = f.cik where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and  (e.cw_id < f.cw_id or f.cw_id is null )   and a.cik is not null and b.cik is not null group by a.cik, b.cik) b using (cik) set a.cik = null, a.bad_cik=2");
+		#This finds filers that match to other filers on name and location, but with different ciks and sets one side to have null cik, preserving the side that has sec_21
+		$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) join filings c on a.filing_id = c.filing_id join filings d on b.filing_id = d.filing_id where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and c.has_sec21 =1  and (d.has_sec21 = 0 or a.cik > b.cik) and a.cik is not null and b.cik is not null group by a.cik, b.cik) b using (cik) set a.cik = null, a.bad_cik=1");
+		#This does the same as the previous, but for pairs without sec21s
+		$db->do("update filers a join (select b.cik from filers a join filers b use key (clean_name) using (match_name) where (a.incorp_country_code = b.incorp_country_code or (a.incorp_country_code is null and b.incorp_country_code is null)) and (a.incorp_subdiv_code = b.incorp_subdiv_code or (a.incorp_subdiv_code is null and b.incorp_subdiv_code is null)) and a.cik != b.cik and a.cik > b.cik and a.cik is not null group by a.cik, b.cik) b using (cik) set a.cik = null, a.bad_cik=2");
 }
 
 sub parse_filers() {

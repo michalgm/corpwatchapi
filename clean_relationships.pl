@@ -53,25 +53,6 @@ $db->do("delete from  relationships where company_name = '' or clean_company = '
 #&match_relationships_locations();
 
 #Insert match names on filers
-print "\nCleaning filer names...\n";
-my $filers = $db->selectall_arrayref('select filer_id, conformed_name from filers where match_name is null');
-my $count = 0;
-my $total = $#${filers} +1;
-foreach my $filer (@$filers) {
-	my ($id, $name) = @$filer;
-	print "\r".int((++$count/$total)*100)."%";
-    #substitute, strip puncucation, try to follow the SEC conform spec
-	$name = &clean_for_match($name);
-	if ($name) {
-		my $sth = $db->prepare_cached("update filers set match_name = ? where filer_id = ?");
-		$sth->execute($name, $id);
-	}
-}
-
-#convert the filer EDGAR state codes into un country and subdiv codes
-print "\nConverting Filer state of incorporation codes to un codes\n";
-$db->do("update filers join region_codes on state_of_incorporation = code  set incorp_country_code = country_code, incorp_subdiv_code = subdiv_code where state_of_incorporation is not null");
-
 
 
 
