@@ -57,8 +57,8 @@ exit;
 
 sub cleanTables() {
 	#FIXME get rid of these - for testing only
-	$db->do("delete from companies");
-	$db->do("delete from cw_id_lookup where timestamp > '2009-07-10'");
+#	$db->do("delete from companies");
+#	$db->do("delete from cw_id_lookup where timestamp > '2009-07-10'");
 
 	print "Updating cw_id_lookup...\n";
 	#store the association of names and cw_ids so that the ids can be re-matched when the table is repopulated
