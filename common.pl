@@ -99,7 +99,7 @@ sub list_bigrams() {
 sub dbconnect {
 	my $dbname = shift;
 	unless($dbname) { $dbname = 'edgarapi_live';}
-	my $dsn = "dbi:mysql:$dbname:localhost;mysql_compression=1";
+	my $dsn = "dbi:mysql:$dbname:localhost";
 	my $dbh;
 	while (!$dbh) {
 		$dbh = DBI->connect($dsn, 'edgar', 'edgar', {'mysql_enable_utf8'=>1});
