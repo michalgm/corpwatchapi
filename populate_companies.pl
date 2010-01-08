@@ -408,7 +408,7 @@ sub calcTopParents() {
 	#Override any interlocking top-parent relationships to use one companies cw_id as both's top parent (and do the same for the children)
 	$db->do("update company_info a join company_info b on a.top_parent_id = b.cw_id and b.top_parent_id = a.cw_id and a.cw_id > b.cw_id and a.year = b.year join company_info c on c.top_parent_id = b.cw_id and c.year = b.year set a.top_parent_id = a.cw_id, c.top_parent_id = a.cw_id");
 	#Remove the child relationship of any company list as top_parent
-	$db->do("delete from company_relations b using company_info a join company_relations b on a.top_parent_id = b.target_cw_id and a.year = b.year");
+	$db->do("delete from b using company_info a join company_relations b on a.top_parent_id = b.target_cw_id and a.year = b.year");
 }
 
 sub setupFilings() {
