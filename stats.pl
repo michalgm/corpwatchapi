@@ -23,7 +23,7 @@
 
 use CGI;
 print CGI::header();
-chdir "/home/dameat/edgarapi/backend/"; #This should be set to the full path of this script
+chdir "/home/dameat/edgarapi_live/backend/"; #This should be set to the full path of this script
 require "./common.pl";
 my $db = &dbconnect();
 
