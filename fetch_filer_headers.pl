@@ -45,7 +45,25 @@ if ($year && $year ne 'all') {
 my $manager = new Parallel::ForkManager( 5 );
 
 print "query...\n";
-my $filings = $db->selectall_arrayref(" select b.filing_id, filename, b.cik, type,b.year,quarter from ( select max(filing_id) as filing_id, cik, year from filings where cik != 0 and bad_header = 0  $where group by cik,year having group_concat(distinct type) != '4' and group_concat(distinct type) != 'REGDEX') a join filings b using(filing_id, cik, year) left join filers c  on ((a.cik= c.cik and a.year = c.year)) left join filers d on a.filing_id = d.filing_id and d.cik is not null where c.filer_id is null and d.filer_id is null order by b.year, quarter") || die "unable to select filings:".$db->errstr;
+#Get list of all potential filings from filings table, then compare against filers table to only get cik/year combos we don't already have. Then group the results by cik/year and return the most recent
+my $filings = $db->selectall_arrayref(" 
+	select a.filing_id, filename, cik, type,year,quarter 
+	from filings a 
+	join ( 
+		select max(b.filing_id) as filing_id from ( 
+			select filing_id as filing_id, cik, year 
+			from filings 
+			where cik != 0 and bad_header = 0  and type != '4' and type != 'REGDEX' $where 
+			group by cik,year 
+		) a 
+		join filings b using(filing_id, cik, year) 
+		left join filers c  on ((a.cik= c.cik and a.year = c.year)) 
+		left join filers d on a.filing_id = d.filing_id and d.cik is not null 
+		where c.filer_id is null and d.filer_id is null 
+		group by a.cik, a.year
+	) b using (filing_id)
+	order by year, quarter
+") || die "unable to select filings:".$db->errstr;
 print "done...\n";
 my $count = 0;
 my $total = $#${filings}+1;
