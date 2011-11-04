@@ -87,9 +87,20 @@ foreach my $filing (@$filings) {
 				my $rowtext = '';
 				my @cells;
 				my $row_parsed = 0;
+				my $noparsesingle = 0;
+				my $rowdata = 0;
 				foreach my $cell (@$row) {
-					push(@cells, &check_cell($cell));
-					if (&check_cell($cell)) {
+					my $celldata = &check_cell($cell);
+					if (! $rowdata && $celldata !~ /^\s*$/) {
+						if ($celldata =~ /^\s*\(.+\)\s*$/ || $celldata =~ /^\s*\(?\*+\)?\s*$/) {
+							$noparsesingle = 1;
+							last;
+						} else {
+							$rowdata = 1;
+						}
+					}
+					push(@cells, $celldata);
+					if ($celldata) {
 						if ($hierarchy eq "") {
 							my ($marge, $indent);
 							if ($cell->as_HTML =~ /margin-left: ?([^;"]+);?( ?text-indent:?([^;"]+))?/i ) {
@@ -125,7 +136,8 @@ foreach my $filing (@$filings) {
 				$rowtext =~ s/(^\||\|$)//g;
 					#print " "x$hierarchy; print "$rowtext\n";
 				unless ($rowtext =~ /\w/) { next; }
-				if($rowtext !~ /\|/) {
+				if ($noparsesingle) { print "skipping due to noparsesingle\n"; }
+				if($rowtext !~ /\|/ && ! $noparsesingle) {
 					#print "----------$rowtext\n";
 					if (($company, $location) = &parse_single($rowtext)) {
 						if (&store_relationship($company, $location, $id, $tableinfo, 'simple table, single-parsed', $hierarchy)) {
@@ -416,7 +428,7 @@ sub store_results() {
 	my $clean = &clean_for_match($result->{company});
 	my $sth = $db->prepare_cached("insert into $relationship_table (relationship_id, company_name, location, filing_id, parse_method, country_code, subdiv_code, hierarchy, clean_company) values (null, ?, ?, ?, ?, ?, ?,?,?)");
 	if ($sth->execute($result->{company},$result->{location}, $result->{id}, $result->{type}, $result->{cc}, $result->{sc}, $result->{hierarchy}, $clean)) { 
-		#print "after|$result->{company}|$result->{location}|$result->{hierarchy}\n";
+		print "after|$result->{company}|$result->{location}|$result->{hierarchy}\n";
 		return 1;
 	} else { print $db->errstr; } 
 }
@@ -603,10 +615,11 @@ sub strip_junk {
 	$text =~ s/[\(]?dba .*$//is;
 	$text =~ s/[ \d%-]+$//s;
 	$text =~ s/[\s\\]+$//s;
+	#$text =~ s/by Sidh Securities \(Mauritius\) and 4\.421\% through Xerox's//sgi; #Thi si sfake
 	$text =~ s/\.\.+/\//g;
 	$text =~ s/\s+$//;
 	$text =~ s/^\s+//;
-	#print "\t$before | $text\n";
+	print "\t$before | $text\n";
 	return $text;
 }
 
@@ -654,7 +667,7 @@ sub lookup_location {
 		$sth = $db->prepare_cached("select country_code from un_countries a where a.country_name = ? union select country_code from un_country_aliases b where b.subdiv_code is null and b.country_name = ?");
 		$sth->execute($second,$second);
 		unless (($cc) = $sth->fetchrow_array) {
-		$sth->execute($first,$first);
+			$sth->execute($first,$first);
 			($cc) = $sth->fetchrow_array;
 			$country_order = 1;
 		}

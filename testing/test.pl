@@ -19,7 +19,10 @@ my $remotebase = 'http://api.corpwatch.org/';
 #	compare_new_to_old("companies/cw_444668");
 #	exit;
 
-
+#my $set1 = $db->selectall_arrayref("select company_name from edgarapi_live.relationships order by company_name");
+#my $set2 = $db->selectall_arrayref("select company_name from relationships where year = 2008 order by company_name");
+#eq_or_diff($set1, $set2);
+#exit;
 
 my @cw_ids = fetch_cw_ids(400, 'where num_children != 0' );
 foreach (@cw_ids) { 
