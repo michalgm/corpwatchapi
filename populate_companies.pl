@@ -119,6 +119,7 @@ sub matchRelationships() {
 	#WARNING: SOME NAMES HAVE MULTIPLE CIKs, and some CIKs have multiple names
 	print "-----Matching relationship companies...\n";
 	print "\tChecking against parent companies...\n";
+	#TODO: WHY DO WE PRINT THIS OUT IF WE NOT ACTUALLY DOING THE MATCHING?
 	#match cases where relationship company matches with filers name,cik, and location, these will be discarded later
 	#$db->do("update relationships a join filers c on a.filing_id = c.filer_id and a.clean_company = c.match_name and a.country_code = c.incorp_country_code and (a.subdiv_code = c.incorp_subdiv_code or (a.subdiv_code is null and c.incorp_subdiv_code is null)) set a.cw_id = c.cw_id where a.cw_id is null and c.cw_id is not null");
 
