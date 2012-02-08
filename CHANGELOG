@@ -1,8 +1,15 @@
+0.04:
+* numerous backend query and index optimizations that increase performance but should not affect results
+* raw_address queries now search against full-text index for performance reasons
+	* can be overridden with substring_match parameter
+* empty query parameters (i.e. company_name=&sic_code=) are ignored (as opposed to making backend queries unnecessarily complex)
+
+
 0.03:
 * Added ability to search historical data (currently 1/1/2003-present)
 	* Added top-level year parameter
 	* Added 'year' parameter to all meta responses
-	* Added '/availableYears' method to return years for which data is avalable
+	* Added '/availableYears' method to return years for which data is available
 	* Added 'history' method to return one company object per year
 	* Check cw_id for existence in year requested
 	* Undefined years default to 'most_recent' (See documentation)
