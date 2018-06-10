@@ -10,24 +10,8 @@ These instructions have note fully been tested. If you find something is missing
 
 * Install dependencies - here's a (possibly incomplete) list of packages required by the project to run on `Ubuntu 14.04`.
 ```
-RUN apt-get update
-RUN apt-get install -y \
-	mysql-server \
-	libwww-mechanize-perl \
-	libdbi-perl \
-	libcompress-raw-zlib-perl \
-	libdatetime-format-builder-perl \
-	libdatetime-format-iso8601-perl \
-	libdatetime-format-strptime-perl \
-	libhtml-element-extended-perl \
-	libparallel-forkmanager-perl \
-	libhtml-tableextract-perl \
-	libhtml-treebuilder-xpath-perl \
-	liblwp-protocol-https-perl \
-	liblwp-mediatypes-perl \
-	libtext-unidecode-perl \
-	libtime-modules-perl \
-	libxml-simple-perl
+apt-get update
+apt-get install mysql-server libwww-mechanize-perl libdbi-perl libcompress-raw-zlib-perl libdatetime-format-builder-perl libdatetime-format-iso8601-perl libdatetime-format-strptime-perl libhtml-element-extended-perl libparallel-forkmanager-perl libhtml-tableextract-perl libhtml-treebuilder-xpath-perl liblwp-protocol-https-perl liblwp-mediatypes-perl libtext-unidecode-perl libtime-modules-perl libxml-simple-perl
 ```
 
 * Create a mysql database schema. The following environment variables can be used to configure the db connection, or just set your schema/user to use the defaults:
