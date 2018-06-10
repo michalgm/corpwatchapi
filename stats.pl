@@ -26,10 +26,11 @@ print CGI::header();
 chdir "/home/dameat/edgarapi_live/backend/"; #This should be set to the full path of this script
 require "./common.pl";
 my $db = &dbconnect();
-
+my $data;
+print "<table><tr><th> </th>";
 foreach my $year (@{$db->selectall_arrayref("select year from filings group by year")}) {
 	$year = $year->[0];
-print "<h3>$year</h3>";
+print "<th>$year</th>";
 
 my @queries = ( 
 "select 'filing companies', count(*) from filers where year = $year",
@@ -43,19 +44,18 @@ my @queries = (
 "select 'number of companies', count(*) from company_info where year = $year",
 "select 'number of company relationships', count(*) from company_relations where year = $year",
 "select 'companies w/o parents or children' , count(distinct cw_id) from company_info a where num_children =0 and num_parents =0 and year = $year",
-"select 'top-level companies', count(distinct cw_id) from company_info a left join company_relations b on cw_id = target_cw_id and a.year = b.year where relation_id is null a and a.$year",
+"select 'top-level companies', count(distinct cw_id) from company_info a left join company_relations b on cw_id = target_cw_id and a.year = b.year where relation_id is null and a.year = $year",
 "select 'top-level companies with children', count(distinct cw_id) from company_info a join company_relations c on cw_id = c.source_cw_id and a.year = c.year left join company_relations b on cw_id = b.target_cw_id where b.relation_id is null and a.year = $year",
 "select 'filers with hierarchy', count(*) from (SELECT c.cw_id FROM relationships a join filings b using (filing_id)  join company_info c on b.cik = c.cik and b.year = c.year where parent_cw_id != c.cw_id  and c.year = $year group by c.cw_id) a");
-print "<table>";
-foreach my $query (@queries) {
-	$row = $db->selectrow_arrayref($query);
-	print "<tr>";
-	foreach my $cell (@$row) {
-		print "<td>$cell</td>";
+	foreach my $query (@queries) {
+		$row = $db->selectrow_arrayref($query);
+		push(@{$data->{$row->[0]}}, $row->[1]);
 	}
-	print "</tr>";
-}
 
+}
+foreach my $key (keys %$data ) {
+	my @list = @{$data->{$key}};
+	print "<tr><td>$key</td><td>".join("</td><td>", @list)."</td>";
+}
 
 print "</table>";
-}
