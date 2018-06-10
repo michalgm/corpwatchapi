@@ -34,7 +34,7 @@ $| = 1;
 use Parallel::ForkManager;
 use LWP::UserAgent;
 use Compress::Zlib;
-use Time::HiRes;
+use Time::HiRes qw(time sleep);
 
 my ($year, $nuke) = @ARGV;
 
@@ -42,7 +42,7 @@ my $where = "";
 if ($year && $year ne 'all') { 
 	$where = " and year = $year ";
 } 
-my $manager = new Parallel::ForkManager( 5 );
+my $manager = new Parallel::ForkManager( 10 );
 
 print "query...\n";
 #Get list of all potential filings from filings table, then compare against filers table to only get cik/year combos we don't already have. Then group the results by cik/year and return the most recent
@@ -86,8 +86,13 @@ foreach my $filing (@$filings) {
 		#}
 	}
 	$manager->start and next;
+	$start = time;
 	print ".";
 	&download_filing($filing);
+	$exec_time = 1 - (time - $start);
+	if ($exec_time > 0) {
+		sleep($exec_time);
+	}
 	#Time::HiRes::sleep(.1);
 	$manager->finish;
 }

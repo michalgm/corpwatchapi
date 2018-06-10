@@ -21,7 +21,7 @@
 # The purpose of this script is to repopulate the companies_* tables using the information that has been parsed from the filings. 
 #-----------------------------------
  
-require "common.pl";
+require "./common.pl";
 our @years_available;
 #reset the tables so that we can repopulate them without duplicating data
 my $time = time();

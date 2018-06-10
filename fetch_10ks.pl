@@ -29,17 +29,23 @@ $| = 1;
 use LWP::UserAgent;
 use Compress::Zlib;
 use Time::ParseDate;
+use Time::HiRes qw(time sleep);
 use Date::Format; 
 use Parallel::ForkManager;
 $ua = LWP::UserAgent->new(keep_alive=>1);
-my $manager = new Parallel::ForkManager( 25 );
+my $manager = new Parallel::ForkManager( 10 );
 
 $current_date = parsedate($db->selectcol_arrayref('select value from meta where meta = "update_date" limit 1')->[0]);
 
 my ($year, $nuke) = @ARGV;
 my (@years, @quarters);
 my $update = 0;
-if ($db->selectrow_arrayref('select value from meta where meta = "update_all_years"')->[0]){
+$current_date = parsedate($db->selectcol_arrayref('select value from meta where meta = "update_date" limit 1')->[0]);
+if (! $current_date || $current_date < 0) {
+  $year = 'all';
+}
+$update_all_years = $db->selectrow_arrayref('select value from meta where meta = "update_all_years"');
+if ($update_all_years && $update_all_years->[0]){
 	print "Overriding to update all years due to changed state\n";
 	$year = 'all';
 	$db->do("alter table filings auto_increment = 0");
@@ -76,7 +82,7 @@ foreach my $year (@years) {
 	foreach my $q (@quarters) { 
 		unless (-d "$datadir$year/$q/") { mkdir("$datadir$year/$q/") ; }
 		print "\nFetching $year Q$q: ";
-		$res = $ua->get("ftp://ftp.sec.gov/edgar/full-index/$year/QTR".$q."/master.gz");
+		$res = $ua->get("http://www.sec.gov/Archives/edgar/full-index/$year/QTR".$q."/master.gz");
 		unless ($res->is_success) { die "Unable to download SEC index for $year Q$q: $!"; }
 
 		#if we're updating, we need to keep fetching until it fails
@@ -93,7 +99,6 @@ foreach my $year (@years) {
 		my $count = 0;
 		my $total = $#lines+1;
 		foreach my $line (@lines) {
-			if ($. == 1) { next; }
 			print "\r".int((++$count/$total)*100)."%";
 			my $id;
 			if ($line =~ /^Last Data Received:\s+(.+)$/) {
@@ -126,6 +131,7 @@ foreach my $year (@years) {
 			$db->disconnect();
 			unless ($type =~ /^10-KT?(\/A)?$/) { next; } #We only want 10-K, 10-K/A, 10-KT, 10-KT/A 
 			my $pid = $manager->start and next;	
+			$start = time;
 			$db = &dbconnect();
 			#print "\tFetching $cik ($id): ";
 			my $output = "$datadir$year/$q/$id";
@@ -163,6 +169,10 @@ foreach my $year (@years) {
 			}
 			#print "done\n";
 			$db->disconnect();
+			$exec_time = 1 - (time - $start);
+			if ($exec_time > 0) {
+				sleep($exec_time);
+			}
 			$manager->finish;
 		}
 		$manager->wait_all_children;

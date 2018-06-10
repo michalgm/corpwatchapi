@@ -57,7 +57,7 @@ for my $set (0 .. int($total/$set_size)+1) {
 		$count += ($set * $set_size);
 		if ($count > $total) { $manager->finish; }
 		if ($lines[$count]) {
-			my ($name, $cik) = split(/:/, $lines[$count]);
+			my ($name, $cik) = split(/:([^:]+):$/, $lines[$count]);
 			my $clean_name =  &clean_for_match($name);
 			
 			my $sth  = $db->prepare_cached("insert into  cik_name_lookup (edgar_name, cik, match_name) values (?, ?, ?)");
