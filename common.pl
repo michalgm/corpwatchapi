@@ -1,9 +1,9 @@
 #!/usr/bin/perl
 
-    # Copyright 2009 CorpWatch.org 
+    # Copyright 2009 CorpWatch.org
     # San Francisco, CA | 94110, USA | Tel: +1-415-641-1633
     # Developed by Greg Michalec and Skye Bender-deMoll
-    
+
     # This program is free software: you can redistribute it and/or modify
     # it under the terms of the GNU General Public License as published by
     # the Free Software Foundation, either version 3 of the License, or
@@ -16,7 +16,7 @@
 
     # You should have received a copy of the GNU General Public License
     # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    
+
 #--------------------------------------------
 #This file includes a number of utility functions that are shared in common in the backend parsing scripts
 #---------------------------------------------
@@ -37,10 +37,10 @@ sub get_current_year() {
 	return (localtime)[5] + 1900;
 }
 
-#formats company name into a standard representation so that they can be matched as text strings	
+#formats company name into a standard representation so that they can be matched as text strings
 sub clean_for_match() {
 	my $name = shift;
-	$name = unidecode($name);  
+	$name = unidecode($name);
 
 	#replace bad characters and character strings
 	$name =~ s/--/-/g;
@@ -82,14 +82,14 @@ sub clean_for_match() {
 
 #break a name up into a series of bigrams
 sub list_bigrams() {
-   my @gram_list;
-   my $name = $_[0];
-   my @words = split(/[\s\/]+/, $name); 
+  my @gram_list;
+  my $name = $_[0];
+  my @words = split(/[\s\/]+/, $name);
 	my $numtokens = @words;
 	foreach my $i(0 .. $numtokens-2) {
 	    my $bigram = $words[$i] ." ". $words[$i+1];
 	    #need a more standard function for stripping punctuation
-		$bigram =~ s/[\.,]//g;  
+		$bigram =~ s/[\.,]//g;
 		push(@gram_list, lc($bigram));
 	}
 	return @gram_list;
@@ -97,18 +97,16 @@ sub list_bigrams() {
 
 #manages the connection to the database
 sub dbconnect {
-	my $dbname = shift;
-	unless($dbname) { $dbname = 'edgarapi_live';}
-	my $dsn = "dbi:mysql:$dbname:localhost";
+  my $db_host = $ENV{'EDGAR_DB_HOST'} || 'localhost';
+  my $db_name = $ENV{'EDGAR_DB_NAME'} || 'edgarapi_live';
+  my $db_user = $ENV{'EDGAR_DB_USER'} || 'edgar';
+  my $db_password = $ENV{'EDGAR_DB_PASSWORD'} || 'edgar';
+
+	my $dsn = "dbi:mysql:$db_name:$db_host";
 	my $dbh;
 	while (!$dbh) {
-		$dbh = DBI->connect($dsn, 'edgar', 'edgar', {'mysql_enable_utf8'=>1});
-		#unless ($dbh) {
-		#	print("Unable to Connect to database\n");
-			#sleep(10);
-		#}
+		$dbh = DBI->connect($dsn, $db_user, $db_password, {'mysql_enable_utf8'=>1});
 	}
 	$dbh->{'mysql_auto_reconnect'} = 1;
 	return $dbh;
 }
-
