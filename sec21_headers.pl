@@ -58,10 +58,12 @@ foreach my $filing (@$filings) {
 	my $content;
 	my $results;
 	$results->{rows_parsed} = 0;
+	$results->{has_html} = 0;
+	$results->{num_rows} = 0;
 	while (<FILE>) { $content .= $_; }
 	close FILE;
 	if ($content =~ /(<HTML>.+<\/HTML>)/si) { 
-		$has_html = 1;
+		$results->{has_html}= 1;
 		my $html = $1;
 		$html =~ s/<tr([^>]*)><\/tr>/<tr\1><td><\/td><\/tr>/gsi;
 		$html =~ s/<tr[^>]*>[^<]*<tr/<tr/gsi;
