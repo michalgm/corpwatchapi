@@ -108,5 +108,6 @@ sub dbconnect {
 		$dbh = DBI->connect($dsn, $db_user, $db_password, {'mysql_enable_utf8'=>1});
 	}
 	$dbh->{'mysql_auto_reconnect'} = 1;
+	$dbh->do("SET session sql_mode=(SELECT REPLACE(\@\@sql_mode, 'ONLY_FULL_GROUP_BY,', ''))");
 	return $dbh;
 }
