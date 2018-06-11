@@ -36,8 +36,8 @@ $db->do("alter table cik_name_lookup auto_increment 0");
 $db->do("alter table cik_name_lookup disable keys");
 
 print "Fetching index from SEC...\n";
-$res = $ua->get("http://www.sec.gov/edgar/NYU/cik.coleft.c");
-unless ($res->is_success) { die "Unable to download http://www.sec.gov/edgar/NYU/cik.coleft.c: $!"; }
+$res = $ua->get("https://www.sec.gov/Archives/edgar/cik-lookup-data.txt"); 
+unless ($res->is_success) { die "Unable to download https://www.sec.gov/Archives/edgar/cik-lookup-data.txt: $!"; }
 my @lines = split(/\n/, $res->content); 
 my $count = 0;
 my $total = $#lines;
