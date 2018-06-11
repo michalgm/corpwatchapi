@@ -69,7 +69,9 @@ sub cleanTables() {
 	$db->do("delete from company_info");
 	$db->do("alter table company_info auto_increment=0");
 	my $num = $db->selectrow_arrayref("select max(cw_id) + 1 from cw_id_lookup")->[0];
-	$db->do("alter table companies auto_increment=$num");
+	if ($num) {
+		$db->do("alter table companies auto_increment=$num");
+	}
 	$db->do("delete from company_relations");
 	$db->do("alter table company_relations auto_increment=0");
 	$db->do("update relationships set cw_id = NULL, parent_cw_id = null, cik = null");
