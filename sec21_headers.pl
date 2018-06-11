@@ -60,6 +60,8 @@ foreach my $filing (@$filings) {
 	$results->{rows_parsed} = 0;
 	$results->{has_html} = 0;
 	$results->{num_rows} = 0;
+	$results->{num_tables} = 0;
+	$results->{tables_parsed} = 0;
 	while (<FILE>) { $content .= $_; }
 	close FILE;
 	if ($content =~ /(<HTML>.+<\/HTML>)/si) { 
