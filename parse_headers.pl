@@ -116,6 +116,7 @@ foreach my $year (@years) {
 
 unless ($header_file) {
 	$manager->wait_all_children;
+	$db = &dbconnect();
 	print "\nCleaning filer names...\n";
 	my $filers = $db->selectall_arrayref('select filer_id, conformed_name from filers where match_name is null');
 	my $count = 0;
