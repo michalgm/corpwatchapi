@@ -35,12 +35,11 @@ use Parallel::ForkManager;
 $ua = LWP::UserAgent->new(keep_alive=>1);
 my $manager = new Parallel::ForkManager( 10 );
 
-$current_date = parsedate($db->selectcol_arrayref('select value from meta where meta = "update_date" limit 1')->[0]);
-
 my ($year, $nuke) = @ARGV;
 my (@years, @quarters);
 my $update = 0;
-$current_date = parsedate($db->selectcol_arrayref('select value from meta where meta = "update_date" limit 1')->[0]);
+$db_current_date = $db->selectcol_arrayref('select value from meta where meta = "update_date" limit 1')->[0];
+$current_date = $db_current_date ? parsedate($db_current_date) : ""; 
 if (! $current_date || $current_date < 0) {
   $year = 'all';
 }
