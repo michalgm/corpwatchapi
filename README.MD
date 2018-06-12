@@ -81,3 +81,7 @@ un_country_subdivisions | list of UN states, provinces, etc
 region_codes | translation table for SEC to UN country and region codes
 unlocode | other locations (metropolitan areas, etc)
 word_freq | table of frequencies of words appearing in company names to help fuzzy matching
+
+### Known issues
+* There is a query in parse_headers.pl (second query after 'Hiding bad ciks' that takes a *very* long time to run, even with minimal data. I'm guessing that we need to populate the tables with some additional data maybe to minimize the number of joins, as it seems to not long on a populated database
+* sec21_headers.pl outputs a *lot* of errors relating to the html table extraction library. It *seems* to still be parsing the tables, though I have not tested thoroughly. 
