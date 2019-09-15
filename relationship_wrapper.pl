@@ -23,7 +23,7 @@
  
 
 use Parallel::ForkManager;
-
+use Term::ProgressBar;
 require "./common.pl";
 #$| =1;
 our $db;
@@ -46,30 +46,49 @@ if ($nuke) {
 	print "done\n";
 }
 
-my $filings = $db->selectall_arrayref("select a.filing_id from filings a join filers b using(cik, year) where has_sec21 = 1 $where and bad_sec21 = 0 and rows_parsed =0 and num_tables = 0 order by a.filing_id") || die "$!";
+# Count all EX21's:
+my $count_all_ex21s = $db->prepare("SELECT COUNT(*) FROM filings;") or die "Prepare Count Error: $DBI::errstr\n";
+$count_all_ex21s->execute() or die "Execute Count Error: $DBI::errstr\n";
+$count_all_ex21s = $count_all_ex21s->fetchrow;
 
-my $manager = new Parallel::ForkManager( 5 );
+# Select only the EX21's not yet parsed:
+my $filings = $db->selectall_arrayref("
+    SELECT filing_id, company_name
+    FROM   filings
+") || die "$!";
+
+my $manager = new Parallel::ForkManager( 40 );
 my ($x, $y) = 0;
-my $total = $#${filings}+1;
-my $limit = (int($total)*.01);
-print "Need to parse $total filings\n";
-foreach my $filing (@$filings) {
-	my $cmd = "perl sec21_headers.pl $filing->[0]";
-	print LOG "$filing->[0] started\n";
-    if ($x >= $limit) { print "\r".++$y."%"; $x = 0; }
-	$x++;
+my $total = 0+@$filings; # length of the array "filings"
 
-	$manager->start and next;
-	my $time = time();
-	$null = `$cmd`;
-	print LOG "$null";
-	#print `$cmd`;
-	print LOG "$filing->[0] finished: ".(time() - $time)."\n";
+my $progress = Term::ProgressBar->new({name  => 'Deploying',
+       count => $count_all_ex21s,
+       ETA   => 'linear'}); # initialize progressbar
+$progress->update($count_all_ex21s - $total); # Skip to current amount of EX21's parsed already.
+
+foreach my $filing (@$filings) {
+    $progress->update(); # update progressbar
+    &print_message("Deploying job for $filing->[0]: \"$filing->[1]\" ...\n");
+	my $cmd = "perl sec21_headers.pl $filing->[0]";
+
+	$manager->start and next;   # In a forked process, do the following:
+        my $time = time();      # start the timer
+        my $null = `$cmd`;      # Run the command and collect output.
+        $null =~ s/\n/\n    /g; # Indent second to last lines.
+        $null = "    " . $null; # Indent the first line.
+        &print_message($null);
+        &print_message("$filing->[0] finished: ".(time() - $time)."\n");
+        #$db->do('UPDATE ex21_found SET if_parsed=1 WHERE ex21_found.index=?', undef, $filing->[2] ) || die "$!";
 	$manager->finish;
+}
+
+sub print_message {
+    my ($msg) = @_;
+    $progress->message($msg);
+    print LOG $msg;
 }
 
 $manager->wait_all_children;
 print "\nDone\n";
 #$db->do("alter table $relationship_table enable keys");
 #$db->do("alter table filing_tables enable keys");
-
