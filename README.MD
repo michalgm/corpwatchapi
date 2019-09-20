@@ -5,17 +5,107 @@ This is the backend data processing code that fetches, parses, processes, and st
 _Please note that this project is currently unfunded, and that the developers have not actively worked on the code since 2010_
 
 
-## How to run
-These instructions have note fully been tested. If you find something is missing, please file an issue.
-
-```
+## Setup
+These instructions have not fully been tested. If you find something is missing, please file an issue.
+### Install Dependencies
+Choose one of the following.
+#### If you have superuser access...
+```bash
 # Install dependencies - here's a (possibly incomplete) list of packages required by the project to run on `Ubuntu 18.04`.
 apt-get update
 apt-get install mysql-server libwww-mechanize-perl libdbi-perl libcompress-raw-zlib-perl libdatetime-format-builder-perl libdatetime-format-iso8601-perl libdatetime-format-strptime-perl libhtml-element-extended-perl libparallel-forkmanager-perl libhtml-tableextract-perl libhtml-treebuilder-xpath-perl liblwp-protocol-https-perl liblwp-mediatypes-perl libtext-unidecode-perl libtime-modules-perl libxml-simple-perl libdbd-mysql-perl
 
 # Create a mysql database schema (see below on how to override default db settings):
 sudo mysql -u root -e "create database edgarapi_live; grant all on edgarapi_live.* to 'edgar'@'localhost' identified by 'edgar'"
+```
+#### If you prefer to install dependencies in your home directory...
+1. [Install Miniconda](https://docs.conda.io/en/latest/miniconda.html) and then execute:
+   ```shell
+   conda create -n cwapi              # Create a conda environment
+   conda activate cwapi               # Activate into this environment
+   conda install -c anaconda mysql -y # Install MySQL
+   ```
+2. **Set up MySQL server.**
+   1. Add environment variables. You can customize the paths as you want:
+      ```shell
+      export MYSQL_HOME=~/ex21/data/mysql
+      export MYSQL_UNIX_PORT=$MYSQL_HOME/socket
+      export MYSQL_TCP_PORT=3306
+      ```
+   2. Initialize MySQL server:
+      ```shell
+      mysqld --user=$(whoami) --datadir=$MYSQL_HOME --basedir=$MYSQL_HOME --log-error=$MYSQL_HOME/mysql.err --pid-file=$MYSQL_HOME/mysql.pid --socket=$MYSQL_HOME/socket --port=3306 --initialize 
+      ```
+      The last line will contain a randomly-generated password for the `root` user in MySQL:
+      ```
+      2019-09-12T06:04:42.207964Z 1 [Note] A temporary password is generated for root@localhost: fob!Ao6cpgGD
+      ```
+      If you are experiencing error `/usr/lib64/libstdc++.so.6: version `GLIBCXX_3.4.21' not found`, you need to first set one more environment variable. 
+      First, find a C++ standard library file in your conda installation directory. In my case of using `miniconda3` at `~/miniconda3`, I execute: 
+      ```shell
+      find ~/miniconda3/ -name "libstdc++.so*"
+      ```
+      which gives me a list of file paths, many of which are residing in `~/miniconda3/pkgs/libstdcxx-ng-8.2.0-hdf63c60_1/lib`. 
+      Thus, I set the environment variable as:
+      ```shell
+      export LD_LIBRARY_PATH=~/miniconda3/pkgs/libstdcxx-ng-8.2.0-hdf63c60_1/lib:$LD_LIBRARY_PATH
+      ```
+      and then repeat the `mysqld` command.
+   3. Spin up MySQL server:
+      ```shell
+      mysqld
+      ```
+      Now open another terminal (tmux pane).
+   4. MySQL requires root password to be changed upon first login. Do this by:
+      ```shell
+      mysqladmin --socket=$MYSQL_HOME/socket --user root --password fob!Ao6cpgGD password
+      ```
+   and follow the prompts.
+   5. Connect to MySQL server as `root`:
+      ```shell
+      mysql --socket=$MYSQL_HOME/socket --verbose -u root -p
+      ```
+   and then enter the password you just set to.
+   6. Under the `mysql>` prompt, execute the following commands:
+   ```sql
+   CREATE DATABASE edgarapi_live; --  Create a database for CorpWatch API to use
+   CREATE USER 'edgar'@'localhost' IDENTIFIED BY 'edgar'; -- Add a user to the MySQL server
+   GRANT ALL PRIVILEGES ON edgarapi_live.* TO 'edgar'@'localhost';
+   FLUSH PRIVILEGES;
+   exit;
+   ```
+3. **Set up Perl.**
+   1. Install `Perlbrew` via `\curl -L https://install.perlbrew.pl | bash`.
+   2. Follow instructions to add the line to your `~/.bashrc`, then restart the shell.
+   3. Prepare Perl environment:
+      ```shell
+      perlbrew install    perl-5.16.0
+      perlbrew switch     perl-5.16.0
+      perlbrew lib create perl-5.16.0@cwapi # Like creating a virtual env, but for Perl.
+      perlbrew use        perl-5.16.0@cwapi
+      perlbrew install-cpanm
+      cpanm install HTML::TableExtract HTML::Parser HTML::TreeBuilder HTML::ElementTable DBI DBD::mysql JSON Time::ParseDate Term::ProgressBar Parallel::ForkManager Text::Unidecode IO::Socket::SSL
+      ```
+## Usage
 
+You can parse EX-21s from scratch, or you can pre-populate your MySQL database with the _CorpWatch DB dumps_.
+
+### Pre-populate with CorpWatch DB dumps
+Simply,
+
+```shell
+wget http://api.corpwatch.org/documentation/db_dump/corpwatch_api_tables_mysql.tar.gz
+tar -xvzf corpwatch_api_tables_mysql.tar.gz # Unzip the archive file
+pv corpwatch_api_tables_mysql/*.sql | mysql --socket=$MYSQL_HOME/socket -u edgar -p edgarapi_live
+```
+
+and enter password for MySQL user `edgar` (in this example of mine, it's `edgar`) when prompted.
+
+Alternatively, you can...
+
+### Parse Filings from Scratch
+
+```bash
 # Populate the schema with the table definitions:
 mysql -u edgar -p edgarapi_live < mysql_database_structure.sql
 
@@ -25,8 +115,10 @@ mysql -u edgar -p edgarapi_live < data_tables.sql
 # Run the update script and be very patient
 ./update_data.sh
 ```
+
 By default, the code will fetch all filings from Q1 2003 to the present. This can be modified  by adjusting `@years_available` in `common.pl`
 
+## Environment Variables
 The following environment variables can be used to configure the db connection, or just set your schema/user to use the defaults:
 
 Environment Variable | Default Value
