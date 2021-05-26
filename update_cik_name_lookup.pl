@@ -25,10 +25,10 @@ require './common.pl';
 our $db;
 $| = 1;
 
-use LWP::UserAgent;
 use Compress::Zlib;
 use Parallel::ForkManager;
-$ua = LWP::UserAgent->new(keep_alive=>1);
+
+my $ua = create_agent();
 
 print "Deleting existing data\n";
 $db->do("delete from cik_name_lookup");
@@ -38,7 +38,7 @@ $db->do("alter table cik_name_lookup disable keys");
 print "Fetching index from SEC...\n";
 $res = $ua->get("https://www.sec.gov/Archives/edgar/cik-lookup-data.txt"); 
 unless ($res->is_success) { die "Unable to download https://www.sec.gov/Archives/edgar/cik-lookup-data.txt: $!"; }
-my @lines = split(/\n/, $res->content); 
+my @lines = split(/\n/, $res->decoded_content); 
 my $count = 0;
 my $total = $#lines;
 my $set_size = int($total * .01);

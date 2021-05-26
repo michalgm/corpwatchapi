@@ -32,7 +32,6 @@ our $datadir;
 $| = 1;
 
 use Parallel::ForkManager;
-use LWP::UserAgent;
 use Compress::Zlib;
 use Time::HiRes qw(time sleep);
 
@@ -123,14 +122,13 @@ sub download_filing() {
 	my $filing_dir = $file_id;
 	$filing_dir =~ s/-//g;
 	my $url = "http://www.sec.gov/Archives/edgar/data/$cik/$filing_dir/$file_id-index.htm";
-	my $ua = LWP::UserAgent->new();
-	#my $ua2 = LWP::UserAgent->new();
+	my $ua = create_agent();
 	my $res2 = $ua->get("$url");
 	my $header;
 	unless ($res2->is_success) { 
-		print "\n\tUnable to fetch $url: $!\n"; 
+		print "\n\tUnable to fetch $url: ". $res2->status_line(). "$!\n"; 
 	} else {
-		$header = $res2->content();
+		$header = $res2->decoded_content();
 	}
 	my $bad_header = 0;
 	if (! $header || $header =~ /Sorry, there was a problem/ || $header =~ /ERROR 404: File not found/) { 

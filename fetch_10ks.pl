@@ -26,13 +26,14 @@ our $db;
 our $datadir;
 $| = 1;
 
-use LWP::UserAgent;
 use Compress::Zlib;
 use Time::ParseDate;
 use Time::HiRes qw(time sleep);
 use Date::Format; 
 use Parallel::ForkManager;
-$ua = LWP::UserAgent->new(keep_alive=>1);
+
+$ua = create_agent();
+
 my $manager = new Parallel::ForkManager( 10 );
 
 my ($year, $nuke) = @ARGV;
@@ -82,7 +83,7 @@ foreach my $year (@years) {
 		unless (-d "$datadir$year/$q/") { mkdir("$datadir$year/$q/") ; }
 		print "\nFetching $year Q$q: ";
 		$res = $ua->get("http://www.sec.gov/Archives/edgar/full-index/$year/QTR".$q."/master.gz");
-		unless ($res->is_success) { die "Unable to download SEC index for $year Q$q: $!"; }
+		unless ($res->is_success) { die "Unable to download SEC index for $year Q$q: ".$res->status_line()." $!"; }
 
 		#if we're updating, we need to keep fetching until it fails
 		if ($update && $q == 4) {
@@ -128,7 +129,7 @@ foreach my $year (@years) {
 			#print "$id";
 
 			$db->disconnect();
-			unless ($type =~ /^10-KT?(\/A)?$/) { next; } #We only want 10-K, 10-K/A, 10-KT, 10-KT/A 
+			unless ($type =~ /^10-KT?(\/A)?$/) { $manager->finish; next; } #We only want 10-K, 10-K/A, 10-KT, 10-KT/A 
 			my $pid = $manager->start and next;	
 			$start = time;
 			$db = &dbconnect();
@@ -136,13 +137,14 @@ foreach my $year (@years) {
 			my $output = "$datadir$year/$q/$id";
 			if (-e "$output.sec21") { 
 				#print "Skipping - File Exists"; 
+				$manager->finish;
 				next;
 			}
 			chomp($filename);
 			#my $res2 = $ua->get("ftp://ftp.sec.gov/$file");
 			my $res2 = $ua->get("http://www.sec.gov/Archives/$filename");
-			unless ($res2->is_success) { print "Unable to fetch $filename: $!"; next}
-			my $filing = $res2->content();
+			unless ($res2->is_success) { print "Unable to fetch $filename: ". $res2->status_line() ." $!"; $manager->finish; next}
+			my $filing = $res2->decoded_content();
 			my ($header, $section21);
 			#if ($filing =~ /(<SEC-HEADER>.+?<\/SEC-HEADER>)/s ) { $header = $1; }
 			if ($filing =~ /(<DOCUMENT>\n<TYPE>EX-21.+?<\/DOCUMENT>)/s) { $section21 = $1; }

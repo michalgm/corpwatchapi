@@ -25,6 +25,8 @@ use DBI;
 our $db = &dbconnect();
 use utf8;
 use Text::Unidecode;
+use LWP::RobotUA;
+use LWP::UserAgent;
 
 our @years_available = (2003 .. (localtime)[5] + 1900);
 our $datadir = "./data/";
@@ -110,4 +112,16 @@ sub dbconnect {
 	$dbh->{'mysql_auto_reconnect'} = 1;
 	$dbh->do("SET session sql_mode=(SELECT REPLACE(\@\@sql_mode, 'ONLY_FULL_GROUP_BY,', ''))");
 	return $dbh;
+}
+
+sub create_agent {
+	$agent = LWP::UserAgent->new(keep_alive=>1);
+    $ua = LWP::RobotUA->new($agent, 'support@api.corpwatch.org');
+	$encoding = HTTP::Message::decodable;
+    # set headers according to https://www.sec.gov/os/accessing-edgar-data
+    $ua->default_header('User-Agent' => 'CorpWatch API support@api.corpwatch.org');
+    $ua->default_header('Accept-Encoding' => $encoding);
+    $ua->default_header('Host' => 'www.sec.gov');
+    $ua->delay(1/60);
+    return $ua;
 }
