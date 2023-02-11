@@ -67,7 +67,7 @@ CREATE TABLE `api_requests` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `api_key` varchar(60) DEFAULT NULL,
   `url` varchar(600) NOT NULL,
-  `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `timestamp` timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `ip_address` varchar(100) NOT NULL,
   `limit` int(11) NOT NULL DEFAULT '0',
   `exec_time` float unsigned DEFAULT NULL,
