@@ -99,17 +99,27 @@ sub list_bigrams() {
 
 #manages the connection to the database
 sub dbconnect {
-  my $db_host = $ENV{'EDGAR_DB_HOST'} || 'localhost';
-  my $db_name = $ENV{'EDGAR_DB_NAME'} || 'edgarapi_live';
-  my $db_user = $ENV{'EDGAR_DB_USER'} || 'edgar';
-  my $db_password = $ENV{'EDGAR_DB_PASSWORD'} || 'edgar';
-
+	my $db_host = $ENV{'EDGAR_DB_HOST'} || 'localhost';
+	my $db_name = $ENV{'EDGAR_DB_NAME'} || 'edgarapi_live';
+	my $db_user = $ENV{'EDGAR_DB_USER'} || 'edgar';
+	my $db_password = $ENV{'EDGAR_DB_PASSWORD'} || 'edgar';
 	my $dsn = "dbi:mysql:$db_name:$db_host";
 	my $dbh;
+	my $attributes = {
+		mysql_enable_utf8mb4 => 1,    # Modern UTF8 handling
+		RaiseError           => 1,    # Better error handling
+		AutoCommit           => 1,    # Explicit transaction control
+		PrintError           => 0,    # Let RaiseError handle it
+		mysql_auto_reconnect => 1,    # Move this into initial connection
+		mysql_server_prepare => 1,    # Better prepared statement handling
+
+	};
 	while (!$dbh) {
-		$dbh = DBI->connect($dsn, $db_user, $db_password, {'mysql_enable_utf8'=>1});
+		$dbh = DBI->connect( $dsn, $db_user, $db_password, $attributes );
 	}
 	$dbh->{'mysql_auto_reconnect'} = 1;
+	$dbh->do("SET NAMES utf8mb4");
+	$dbh->do("SET CHARACTER SET utf8mb4");
 	$dbh->do("SET session sql_mode=(SELECT REPLACE(\@\@sql_mode, 'ONLY_FULL_GROUP_BY,', ''))");
 	return $dbh;
 }
