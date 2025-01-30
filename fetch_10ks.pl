@@ -90,6 +90,7 @@ foreach my $year (@years) {
 			push(@years, $year+1);
 		}
 
+		$db = &dbconnect();
 		my $content = Compress::Zlib::memGunzip($res->content());
 		print "Caching filings already fetched\n";
 		my $filings =$db->selectall_hashref("select concat(year,filename,type) as id from filings where year = $year and quarter = $q", 'id');
@@ -123,6 +124,8 @@ foreach my $year (@years) {
 			}
 			#$sth3->finish;
 			#print "\n$cik: ";
+			$db = &dbconnect();
+
 			my $sth = $db->prepare_cached("insert into filings (filing_date, type, company_name, filename, cik, has_sec21, year, quarter) values(?, ?, ?, ?, ?, 0, ?, ?)");
 			$sth->execute($date, $type, $name, $filename, $cik, $year, $q) || die $sth->errstr;
 			$id =  $db->last_insert_id(undef, 'edgarapi', 'filings', 'filing_id');	

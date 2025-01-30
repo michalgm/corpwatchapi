@@ -68,6 +68,7 @@ if ($header_file) {
 
 foreach my $year (@years) {
 	print "Caching already_parsed...\n";
+	$db = &dbconnect();
 	my $already_parsed = $db->selectall_hashref("select b.filing_id from filers b where b.year = $year and (cik is not null or bad_cik != 0)", 'filing_id');
 	foreach my $q (1 .. 4) {
 		my @check_headers;
