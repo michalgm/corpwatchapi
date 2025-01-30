@@ -68,15 +68,17 @@ foreach my $year (@years) {
 }
 
 print "deleting orphaned filers\n";
-$db->do("update filers a left join filings b using (filing_id) set a.filing_id = null where b.cik is null");
-$rows = $db->do("delete from filers where filing_id is null");
+$rows = $db->do("DELETE a FROM filers a JOIN filings b USING (filing_id) WHERE b.cik IS NULL");
+# $db->do("update filers a left join filings b using (filing_id) set a.filing_id = null where b.cik is null");
+# $rows = $db->do("delete from filers where filing_id is null");
 if ($rows > 0 ) { 
 	print LOG "$rows filers deleted due to missing filing\n";
 	$db->do("update meta set value = 1 where meta = 'update_all_years'");
 }
 print "deleting orphaned relationships\n";
-$db->do("update relationships a left join filings b using (filing_id) set a.filing_id = null where b.cik is null");
-$rows = $db->do("delete from relationships where filing_id is null");
+$rows = $db->do("DELETE a from relationships a join filings b using (filing_id) where b.cik is null");
+# $db->do("update relationships a left join filings b using (filing_id) set a.filing_id = null where b.cik is null");
+# $rows = $db->do("delete from relationships where filing_id is null");
 if ($rows > 0 ) { 
 	print LOG "$rows relationships delete due to missing filing\n";
 	$db->do("update meta set value = 1 where meta = 'update_all_years'");
