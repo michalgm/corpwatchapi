@@ -77,9 +77,9 @@ sub cleanTables() {
 	$db->do("update relationships set cw_id = NULL, parent_cw_id = null, cik = null");
 	$db->do("update filers set cw_id = NULL");
 	#Repair table state, if we lft it in a bad state
-	$db->do("alter table relationships add key cw_id (cw_id)");
+	$db->do("alter table relationships add key IF NOT EXISTS cw_id (cw_id)");
 	$db->do("alter table companies enable keys");
-	$db->do("alter table relationships add key parent_cw_id (parent_cw_id)");
+	$db->do("alter table relationships add key IF NOT EXISTS parent_cw_id (parent_cw_id)");
 	$db->do("delete from company_names");
 	$db->do("alter table company_names auto_increment=0");
 	$db->do("delete from company_locations");
@@ -175,7 +175,7 @@ sub createRelationshipCompanies() {
 			#$inserted_companies->{uc($relate->{clean_company})} = $existing_cw_id;
 			#Replace NULLs
 			unless ($relate->{subdiv_code}) {$relate->{subdiv_code} = ''; }
-			unless ($relate->{cik}) {$relate->{cik} = ''; }
+			unless ($relate->{cik}) {$relate->{cik} = 0; }
 			$db->prepare_cached("insert into cw_id_lookup (cw_id, company_name, cik, country_code, subdiv_code, source, timestamp) value (?, ?, ?, ?, ?, 'relationships', '$date')")->execute("$existing_cw_id",$relate->{clean_company}, $relate->{cik}, $relate->{country_code}, $relate->{subdiv_code}); 
 		#}
 		#print "$relate->{relationship_id} : $existing_cw_id\n";
@@ -184,7 +184,7 @@ sub createRelationshipCompanies() {
 	}
 	#$db->do("insert into companies (row_id, cik, company_name, source_type, source_id) select null, cik, clean_company, 'relationships', relationship_id from relationships left join companies using (cik) where companies.cik is null group by clean_company,country_code,subdiv_code, cik");
 	#$db->do("alter table relationships add key cw_id (cw_id)");
-	$db->do("update companies set cw_id = row_id where cw_id is null or cw_id = ''");
+	$db->do("update companies set cw_id = row_id where cw_id is null or cw_id = 0");
 	$db->do("alter table companies enable keys");
 	$db->do("update relationships a join companies b using (cik) set a.cw_id = b.cw_id where a.cw_id is null and b.cik is not null");
 	$db->do("update relationships a join cw_id_lookup b on clean_company = b.company_name and a.country_code = b.country_code and (a.subdiv_code = b.subdiv_code or (a.subdiv_code is null and b.subdiv_code = '')) set a.cw_id = b.cw_id where a.cw_id is null and b.source = 'relationships'");
@@ -227,7 +227,7 @@ sub insertRelationships() {
 
 	# Give relationships that have no parent_cw_id the cw_id of the filer as the parent
 	$db->do("update relationships a join filings b using (filing_id) join companies c on b.cik = c.cik set parent_cw_id = c.cw_id where (parent_cw_id is null or parent_cw_id = '0' and b.cik is not null)");
-	$db->do("alter table relationships add key parent_cw_id (parent_cw_id)");
+	$db->do("alter table relationships add key IF NOT EXISTS parent_cw_id (parent_cw_id)");
 
 	# Insert relationship into company_relations table, ignoring dupes
 	print "inserting relationships...\n";
